@@ -114,3 +114,23 @@ class OpenAIService:
                 "required": ["human"]
             }
         } 
+    
+    def get_human_names_schema(self):
+        return {
+            "name": "get_human_names",
+            "description": "Return list of human names.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "names": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "List of human names"
+                    }
+                },
+                "required": ["names"]
+            }
+        } 
+        
