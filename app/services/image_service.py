@@ -878,9 +878,18 @@ class ImageService:
             # Use the existing FaceProcessingService to extract faces
             from app.services.face_processing_service import FaceProcessingService
             
+            # Extract person name from the file path for logging purposes
+            filename = os.path.basename(source_path)
+            # Try to extract person name from filename (usually in format: name_lastname_timestamp_number.jpg)
+            name_parts = filename.split('_')
+            if len(name_parts) >= 2:
+                person_name = f"{name_parts[0]}_{name_parts[1]}"
+            else:
+                person_name = "unknown_person"
+            
             # Extract faces using the existing method
             current_app.logger.info(f"[Batch {batch_id}] Extracting faces from {source_path}")
-            face_objs = FaceProcessingService.extract_faces_with_timeout(source_path)
+            face_objs = FaceProcessingService.extract_faces_with_timeout(source_path, None, person_name)
             
             if not face_objs:
                 current_app.logger.warning(f"[Batch {batch_id}] No faces detected in {source_path}")
