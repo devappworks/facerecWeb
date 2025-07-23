@@ -302,6 +302,7 @@ class RecognitionService:
                 _ = DeepFace.build_model("VGG-Face")
                 logger.info("Model built")
                 logger.info("DB path: " + db_path)
+                logger.info("Image Path: " + image_path)
                 
                 # Izvršavamo prepoznavanje bez batched parametra
                 dfs = DeepFace.find(
