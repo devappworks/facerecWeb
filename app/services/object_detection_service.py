@@ -88,7 +88,7 @@ class ObjectDetectionService:
                     1) description of the image
                     2) alt text for the image
                     3) an array of all the object found in the image
-                    4) possible SEO metatags for the image (no more than 5)
+                    4) possible SEO metatags for the image (no more than 4)
                     The description must be a short description of the image. It must be in the English language.
                     The alt text must be a short description of the image shorter than description. It must be in the English language.
                     The array of objects must be an array of strings, each string is the name of an object found in the image.
