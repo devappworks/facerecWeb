@@ -274,7 +274,7 @@ class BatchRecognitionService:
                 optimal_threads = min(3, max(1, len(batch_folders) // 2))
             else:
                 # User je zadao broj, ali ograniči na max 3 zbog performance
-                optimal_threads = min(3, max_threads)
+                optimal_threads = min(15, max_threads)
             
             optimal_threads = min(optimal_threads, len(batch_folders))  # Ne više od batch-eva
             
