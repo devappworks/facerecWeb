@@ -299,7 +299,10 @@ class RecognitionService:
                 db_path = os.path.join('storage/recognized_faces_prod', clean_domain)
                 
                 # KLJUČNA PROMENLJIVA - promeni ovu na True za batched mode
-                use_batched = False
+                if clean_domain == "serbia":
+                    use_batched = True
+                else:
+                    use_batched = False
                 
                 logger.info("Building VGG-Face model...")
                 _ = DeepFace.build_model("VGG-Face")
