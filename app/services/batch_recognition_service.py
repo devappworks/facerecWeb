@@ -121,7 +121,10 @@ class BatchRecognitionService:
                 distance_metric=distance_metric,
                 enforce_detection=False,
                 threshold=threshold,
-                silent=True  # Stišamo output za batch processing
+                silent=True,  # Stišamo output za batch processing
+                # Dodatne optimizacije za threading:
+                refresh_db=False,  # Ne refresh-uj db svaki put
+                batched=False  # Eksplicitno disable batching u DeepFace
             )
             
             processing_time = time.time() - batch_start_time
@@ -268,12 +271,20 @@ class BatchRecognitionService:
                 }
             
             # PAMETNO IZRAČUNAVANJE THREAD COUNT-a
-            # Heuristika: max 3 threada ili 1 thread po 2 batch-a
-            optimal_threads = min(3, max(1, len(batch_folders) // 2)) if max_threads is None else max_threads
+            # UVEK ograniči na max 3 threada zbog resource contention
+            if max_threads is None:
+                # Auto-calculate: max 3 threada ili 1 thread po 2 batch-a
+                optimal_threads = min(3, max(1, len(batch_folders) // 2))
+            else:
+                # User je zadao broj, ali ograniči na max 3 zbog performance
+                optimal_threads = min(3, max_threads)
+            
             optimal_threads = min(optimal_threads, len(batch_folders))  # Ne više od batch-eva
             
-            logger.info(f"Processing {len(batch_folders)} batches with {optimal_threads} threads (optimal calculation)")
-            logger.info(f"User requested: {max_threads}, calculated optimal: {optimal_threads}")
+            logger.info(f"Processing {len(batch_folders)} batches with {optimal_threads} threads (performance-optimized)")
+            logger.info(f"User requested: {max_threads}, system enforced max: 3, final: {optimal_threads}")
+            if max_threads and max_threads > 3:
+                logger.warning(f"Reduced threads from {max_threads} to {optimal_threads} to avoid resource contention")
             
             # PARALELNO PROCESIRANJE BATCH-EVA
             batch_results = []
