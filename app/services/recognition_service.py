@@ -298,13 +298,17 @@ class RecognitionService:
                 distance_metric = "cosine"
                 db_path = os.path.join('storage/recognized_faces_prod', clean_domain)
                 
+                # KLJUČNA PROMENLJIVA - promeni ovu na True za batched mode
+                use_batched = True
+                
                 logger.info("Building VGG-Face model...")
                 _ = DeepFace.build_model("VGG-Face")
                 logger.info("Model built")
                 logger.info("DB path: " + db_path)
                 logger.info("Image Path: " + image_path)
+                logger.info(f"Using batched mode: {use_batched}")
                 
-                # Izvršavamo prepoznavanje bez batched parametra
+                # Izvršavamo prepoznavanje sa ili bez batched parametra
                 dfs = DeepFace.find(
                     img_path=image_path,
                     db_path=db_path,
@@ -313,25 +317,41 @@ class RecognitionService:
                     distance_metric=distance_metric,
                     enforce_detection=False,
                     threshold=0.35,
-                    silent=False
+                    silent=False,
+                    batched=use_batched  # KLJUČNI PARAMETAR!
                 )
                 
-                # Logiraj detaljno sve pronađene osobe pre filtriranja
-                RecognitionService.log_deepface_results(dfs)
-                # Filtriraj rezultate na osnovu validnih lica
-                filtered_dfs = RecognitionService.filter_recognition_results_by_valid_faces(
-                    dfs, final_valid_faces, resized_width, resized_height
-                )
-                
-                # Analiziramo filtrirane rezultate sa dimenzijama slike
-                result = RecognitionService.analyze_recognition_results(
-                    filtered_dfs, 
-                    threshold=0.35,
-                    original_width=original_width,
-                    original_height=original_height,
-                    resized_width=resized_width,
-                    resized_height=resized_height
-                )
+                # Pozivamo odgovarajuće funkcije na osnovu use_batched promenljive
+                if use_batched:
+                    # BATCHED MODE: DeepFace vraća list of dicts
+                    logger.info("Using BATCHED functions (list of dicts)")
+                    RecognitionService.log_deepface_results_batched(dfs)
+                    filtered_dfs = RecognitionService.filter_recognition_results_by_valid_faces_batched(
+                        dfs, final_valid_faces, resized_width, resized_height
+                    )
+                    result = RecognitionService.analyze_recognition_results_batched(
+                        filtered_dfs, 
+                        threshold=0.35,
+                        original_width=original_width,
+                        original_height=original_height,
+                        resized_width=resized_width,
+                        resized_height=resized_height
+                    )
+                else:
+                    # STANDARD MODE: DeepFace vraća list of DataFrames (postojeće funkcije)
+                    logger.info("Using STANDARD functions (list of DataFrames)")
+                    RecognitionService.log_deepface_results(dfs)
+                    filtered_dfs = RecognitionService.filter_recognition_results_by_valid_faces(
+                        dfs, final_valid_faces, resized_width, resized_height
+                    )
+                    result = RecognitionService.analyze_recognition_results(
+                        filtered_dfs, 
+                        threshold=0.35,
+                        original_width=original_width,
+                        original_height=original_height,
+                        resized_width=resized_width,
+                        resized_height=resized_height
+                    )
                 logger.info(f"Recognition completed in {time.time() - start_time:.2f}s")
                 return result
                 
@@ -840,3 +860,440 @@ class RecognitionService:
         
         logger.info("="*80 + "\n")
         print("="*50)
+
+    # =====================================
+    # BATCHED=TRUE FUNCTIONS (list of dicts)
+    # =====================================
+    
+    @staticmethod
+    def log_deepface_results_batched(results):
+        """
+        Logiraj detaljno sve rezultate DeepFace.find pre filtriranja (BATCHED MODE - list of dicts)
+        
+        Args:
+            results: Rezultati DeepFace.find sa batched=True (lista dictionary objekata)
+        """
+        logger.info("\n" + "="*80)
+        logger.info("DEEPFACE.FIND RESULTS (BATCHED MODE) - ALL FOUND MATCHES (PRE FILTRIRANJE)")
+        logger.info("="*80)
+        
+        if not results or len(results) == 0:
+            logger.info("❌ Nema rezultata od DeepFace.find (batched)")
+            print("❌ Nema rezultata od DeepFace.find (batched)")
+            return
+        
+        total_matches = 0
+        all_persons = {}  # Dictionary za grupisanje po imenima
+        
+        logger.info(f"\n📊 Batched Results:")
+        print(f"\n📊 Analiziram Batched Results:")
+        logger.info(f"   Broj pronađenih match-ova: {len(results)}")
+        print(f"   Broj pronađenih match-ova: {len(results)}")
+        
+        # Analiziraj svaki dict u listi
+        for match_index, match_dict in enumerate(results):
+            try:
+                # Izvuci osnovne informacije iz dict-a
+                identity_path = match_dict['identity']
+                distance = float(match_dict['distance'])
+                confidence = round((1 - distance) * 100, 2)
+                
+                # Koordinate lica
+                source_x = float(match_dict['source_x'])
+                source_y = float(match_dict['source_y'])
+                source_w = float(match_dict['source_w'])
+                source_h = float(match_dict['source_h'])
+                
+                # Ekstraktaj ime osobe iz putanje
+                if '\\' in identity_path:  # Windows putanja
+                    filename = identity_path.split('\\')[-1]
+                else:  # Unix putanja
+                    filename = identity_path.split('/')[-1]
+                
+                # Uzmi ime do prvog datuma
+                name_parts = filename.split('_')
+                person_name = []
+                for part in name_parts:
+                    if len(part) >= 8 and (part[0:4].isdigit() or '-' in part):
+                        break
+                    person_name.append(part)
+                person_name = '_'.join(person_name)
+                
+                # Logiraj detalje match-a
+                logger.info(f"   ➡️ Match {match_index + 1} (batched):")
+                logger.info(f"      👤 Osoba: {person_name}")
+                logger.info(f"      📁 Putanja: {identity_path}")
+                logger.info(f"      📏 Distance: {distance:.4f}")
+                logger.info(f"      🎯 Confidence: {confidence}%")
+                logger.info(f"      📍 Koordinate: ({source_x}, {source_y}, {source_w}, {source_h})")
+                
+                print(f"   ➡️ Match {match_index + 1}: {person_name} - Confidence: {confidence}%")
+                
+                # Grupiši po imenima
+                if person_name not in all_persons:
+                    all_persons[person_name] = []
+                all_persons[person_name].append({
+                    'distance': distance,
+                    'confidence': confidence,
+                    'path': identity_path,
+                    'coordinates': (source_x, source_y, source_w, source_h)
+                })
+                
+                total_matches += 1
+                
+            except Exception as e:
+                logger.warning(f"Error processing batched match {match_index + 1}: {str(e)}")
+                continue
+        
+        # Sumiranje rezultata
+        logger.info(f"\n📈 SUMARNI PREGLED PRONAĐENIH OSOBA (BATCHED):")
+        print(f"\n📈 SUMARNI PREGLED PRONAĐENIH OSOBA (BATCHED):")
+        logger.info(f"   Ukupno match-ova: {total_matches}")
+        logger.info(f"   Broj različitih osoba: {len(all_persons)}")
+        print(f"   Ukupno match-ova: {total_matches}")
+        print(f"   Broj različitih osoba: {len(all_persons)}")
+        
+        for person_name, matches in all_persons.items():
+            avg_confidence = sum(match['confidence'] for match in matches) / len(matches)
+            best_confidence = max(match['confidence'] for match in matches)
+            logger.info(f"   👤 {person_name}: {len(matches)} match-ova, avg confidence: {avg_confidence:.1f}%, best: {best_confidence:.1f}%")
+            print(f"   👤 {person_name}: {len(matches)} match-ova, avg confidence: {avg_confidence:.1f}%, best: {best_confidence:.1f}%")
+        
+        logger.info("="*80 + "\n")
+        print("="*50)
+
+    @staticmethod
+    def filter_recognition_results_by_valid_faces_batched(results, valid_faces, resized_width, resized_height):
+        """
+        Filtrira rezultate DeepFace.find na osnovu validnih lica (BATCHED MODE - list of dicts)
+        
+        Args:
+            results: Rezultati DeepFace.find sa batched=True (lista dictionary objekata)
+            valid_faces (list): Lista validnih lica
+            resized_width (int): Širina resized slike
+            resized_height (int): Visina resized slike
+            
+        Returns:
+            Filtrirani rezultati (lista dictionary objekata)
+        """
+        if not valid_faces or not results:
+            return results
+        
+        logger.info(f"Filtering batched recognition results based on {len(valid_faces)} valid faces")
+        
+        # Kreiraj koordinate validnih lica u resized formatu za poređenje
+        valid_coordinates = []
+        for face_info in valid_faces:
+            resized_coords = face_info['resized_coordinates']
+            valid_coordinates.append({
+                'x': resized_coords['x'],
+                'y': resized_coords['y'],
+                'w': resized_coords['w'],
+                'h': resized_coords['h'],
+                'index': face_info['index']
+            })
+        
+        filtered_results = []
+        
+        # Batched results su lista dictionary objekata
+        for match_dict in results:
+            try:
+                # Dobij koordinate iz rezultata
+                source_x = float(match_dict['source_x'])
+                source_y = float(match_dict['source_y'])
+                source_w = float(match_dict['source_w'])
+                source_h = float(match_dict['source_h'])
+                
+                # Proveri da li se poklapaju sa bilo kojim validnim licem
+                for valid_coord in valid_coordinates:
+                    # Tolerancija za poređenje koordinata (u pikselima)
+                    tolerance = 5
+                    
+                    if (abs(source_x - valid_coord['x']) <= tolerance and
+                        abs(source_y - valid_coord['y']) <= tolerance and
+                        abs(source_w - valid_coord['w']) <= tolerance and
+                        abs(source_h - valid_coord['h']) <= tolerance):
+                        
+                        filtered_results.append(match_dict)
+                        logger.info(f"Batched match found for valid face {valid_coord['index']} at coordinates ({source_x}, {source_y}, {source_w}, {source_h})")
+                        break
+            except Exception as e:
+                logger.warning(f"Error filtering batched match: {str(e)}")
+                continue
+        
+        logger.info(f"Filtered batched results: {len(results)} -> {len(filtered_results)} matches")
+        return filtered_results
+
+    @staticmethod  
+    def analyze_recognition_results_batched(results, threshold=0.4, original_width=None, original_height=None, resized_width=None, resized_height=None):
+        """
+        Analizira rezultate prepoznavanja (BATCHED MODE - list of dicts)
+        Vraća isti format kao analyze_recognition_results ali radi sa list of dicts umesto DataFrames.
+        """
+        name_scores = defaultdict(list)
+        all_matches = defaultdict(list)
+        face_coordinates_map = defaultdict(list)
+        matches_with_coords = []
+        original_deepface_results = {}
+        
+        logger.info("Analyzing batched recognition results...")
+        
+        # Provera da li je results None ili prazan
+        if results is None or len(results) == 0:
+            logger.info("No batched results to analyze")
+            return {"status": "error", "message": "No matches found"}
+        
+        try:
+            logger.info(f"Batched results type: {type(results)}, count: {len(results)}")
+            
+            # Batched results su lista dictionary objekata
+            for match_dict in results:
+                try:
+                    distance = float(match_dict['distance'])
+                    full_path = match_dict['identity']
+                    
+                    # Izvlačimo koordinate lica sa smanjene slike
+                    face_coords = None
+                    if all(dim is not None for dim in [original_width, original_height, resized_width, resized_height]):
+                        try:
+                            source_x = float(match_dict['source_x'])
+                            source_y = float(match_dict['source_y'])
+                            source_w = float(match_dict['source_w'])
+                            source_h = float(match_dict['source_h'])
+                            
+                            # Konvertujemo u procente originalne slike
+                            face_coords = {
+                                "x_percent": round((source_x / resized_width) * 100, 2),
+                                "y_percent": round((source_y / resized_height) * 100, 2),
+                                "width_percent": round((source_w / resized_width) * 100, 2),
+                                "height_percent": round((source_h / resized_height) * 100, 2)
+                            }
+                            logger.debug(f"Batched face coordinates: {face_coords}")
+                        except (KeyError, ValueError) as coord_error:
+                            logger.warning(f"Could not extract batched face coordinates: {coord_error}")
+                            face_coords = None
+                    
+                    # Izvlačimo ime osobe (sve do datuma)
+                    if '\\' in full_path:  # Windows putanja
+                        filename = full_path.split('\\')[-1]
+                    else:  # Unix putanja
+                        filename = full_path.split('/')[-1]
+                    
+                    # Uzimamo sve do prvog datuma (YYYYMMDD ili YYYY-MM-DD format)
+                    name_parts = filename.split('_')
+                    name = []
+                    for part in name_parts:
+                        if len(part) >= 8 and (part[0:4].isdigit() or '-' in part):
+                            break
+                        name.append(part)
+                    name = '_'.join(name)
+                    
+                    normalized_name = name.strip()
+                    
+                    # Store match sa koordinatama za grupiranje
+                    match_data = {
+                        'name': normalized_name,
+                        'distance': distance,
+                        'face_coords': face_coords,
+                        'full_path': full_path
+                    }
+                    matches_with_coords.append(match_data)
+                    
+                    # Čuvaj originalne DeepFace rezultate za svaku osobu
+                    if normalized_name not in original_deepface_results:
+                        original_deepface_results[normalized_name] = []
+                    original_deepface_results[normalized_name].append(match_dict)
+                    
+                    # Store all matches
+                    all_matches[normalized_name].append(distance)
+                    if face_coords:
+                        face_coordinates_map[normalized_name].append(face_coords)
+                    logger.debug(f"Found batched match: {normalized_name} with distance {distance}")
+                except Exception as e:
+                    logger.warning(f"Error processing batched match: {str(e)}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Error processing batched results: {str(e)}")
+            return {"status": "error", "message": "Error processing batched recognition results"}
+
+        # Grupiranje match-ova po koordinatama
+        logger.info(f"Total batched matches before grouping: {len(matches_with_coords)}")
+        grouped_matches = RecognitionService.group_matches_by_coordinates(matches_with_coords, tolerance=10)
+        logger.info(f"Total batched matches after grouping: {len(grouped_matches)}")
+        
+        # Kreiranje novih struktura podataka na osnovu grupiranih rezultata
+        name_scores = defaultdict(list)
+        all_matches = defaultdict(list)
+        face_coordinates_map = defaultdict(list)
+        
+        for match in grouped_matches:
+            name = match['name']
+            distance = match['distance']
+            face_coords = match['face_coords']
+            
+            # Store all matches
+            all_matches[name].append(distance)
+            if face_coords:
+                face_coordinates_map[name].append(face_coords)
+                
+            # Store matches that pass threshold
+            if distance < threshold:
+                name_scores[name].append(distance)
+                logger.debug(f"Batched grouped match passed threshold: {name} with distance {distance}")
+
+        # Log summary of all matches found
+        logger.info(f"\n{'='*50}")
+        logger.info(f"BATCHED RECOGNITION RESULTS:")
+        logger.info(f"Total unique persons found: {len(all_matches)}")
+        for name, distances in all_matches.items():
+            avg_confidence = round((1 - sum(distances)/len(distances)) * 100, 2)
+            logger.info(f"Person: {name}")
+            logger.info(f"- Occurrences: {len(distances)}")
+            logger.info(f"- Average confidence: {avg_confidence}%")
+            logger.info(f"- Best confidence: {round((1 - min(distances)) * 100, 2)}%")
+        logger.info(f"{'='*50}\n")
+
+        # Process matches that passed threshold
+        if not name_scores:
+            logger.info(f"No batched matches found within threshold {threshold}")
+            # Return all matches even if none passed threshold
+            return {
+                "status": "error",
+                "message": "No matches within threshold",
+                "all_detected_matches": [
+                    {
+                        "person_name": name,
+                        "metrics": {
+                            "occurrences": len(distances),
+                            "average_distance": round(sum(distances) / len(distances), 4),
+                            "min_distance": round(min(distances), 4),
+                            "distances": distances
+                        }
+                    }
+                    for name, distances in all_matches.items()
+                ]
+            }
+        
+        # Calculate statistics for matches that passed threshold
+        name_statistics = {}
+        for name, distances in name_scores.items():
+            avg_distance = sum(distances) / len(distances)
+            min_distance = min(distances)
+            occurrences = len(distances)
+            
+            weighted_score = (avg_distance * 0.4) + (min_distance * 0.3) - (occurrences * 0.1)
+            
+            name_statistics[name] = {
+                "occurrences": occurrences,
+                "avg_distance": avg_distance,
+                "min_distance": min_distance,
+                "weighted_score": weighted_score,
+                "distances": distances
+            }
+            
+            logging.info(f"Batched threshold-passing matches for {name}:")
+            logger.info(f"- Occurrences: {occurrences}")
+            logger.info(f"- Average distance: {avg_distance:.4f}")
+            logger.info(f"- Min distance: {min_distance:.4f}")
+            logger.info(f"- Weighted score: {weighted_score:.4f}")
+        
+        # Find best match among threshold-passing matches
+        best_match = min(name_statistics.items(), key=lambda x: x[1]['weighted_score'])
+        best_name = best_match[0]
+        stats = best_match[1]
+        
+        # Dodajemo ispis najboljeg podudaranja
+        logger.info("\n" + "="*50)
+        logger.info(f"BEST BATCHED MATCH FOUND: {best_name}")
+        logger.info(f"Confidence: {round((1 - stats['min_distance']) * 100, 2)}%")
+        logger.info("="*50 + "\n")
+        
+        logger.info(f"Best batched match found: {best_name} with confidence {round((1 - stats['min_distance']) * 100, 2)}%")
+        
+        # Dobavi originalno ime osobe iz mapiranja
+        from app.services.text_service import TextService
+        original_person = TextService.get_original_text(best_name)
+        
+        # Ako je pronađeno originalno ime, koristi ga
+        if original_person != best_name:
+            logger.info(f"Found original name for {best_name}: {original_person}")
+            display_name = original_person
+        # Ako nije pronađeno originalno ime, a ime sadrži donju crtu, zameni je razmakom
+        elif '_' in best_name:
+            display_name = best_name.replace('_', ' ')
+            logger.info(f"No mapping found, using formatted name: {display_name}")
+        else:
+            display_name = best_name
+        
+        # Kreiraj niz svih prepoznatih osoba koje su prošle threshold
+        recognized_persons = []
+        for person_name in name_scores.keys():
+            original_person = TextService.get_original_text(person_name)
+            if original_person != person_name:
+                formatted_display_name = original_person
+            elif '_' in person_name:
+                formatted_display_name = person_name.replace('_', ' ')
+            else:
+                formatted_display_name = person_name
+            
+            # Uzmi samo prve koordinate za tu osobu
+            coords_list = face_coordinates_map.get(person_name, [])
+            face_coordinates = coords_list[0] if coords_list else None
+            
+            # Dodajemo objekat sa imenom i jednim setom koordinata
+            person_obj = {
+                "name": formatted_display_name,
+                "face_coordinates": face_coordinates
+            }
+            recognized_persons.append(person_obj)
+        
+        logger.info(f"All recognized batched persons: {[p['name'] for p in recognized_persons]}")
+        
+        # Logiraj originalne DeepFace rezultate za finalne prepoznate osobe
+        logger.info("\n" + "="*80)
+        logger.info("ORIGINAL DEEPFACE BATCHED RESULTS FOR FINAL RECOGNIZED PERSONS:")
+        logger.info("="*80)
+        for person_name in name_scores.keys():
+            if person_name in original_deepface_results:
+                logger.info(f"\nPerson: {person_name}")
+                logger.info("-" * 50)
+                for i, result in enumerate(original_deepface_results[person_name]):
+                    logger.info(f"DeepFace Batched Result #{i+1}:")
+                    for key, value in result.items():
+                        logger.info(f"  {key}: {value}")
+                    logger.info("-" * 30)
+        logger.info("="*80 + "\n")
+        
+        return {
+            "status": "success",
+            "message": f"Face recognized as: {display_name} (batched)",
+            "person": display_name,
+            "recognized_persons": recognized_persons,
+            "best_match": {
+                "person_name": best_name,
+                "display_name": display_name,
+                "confidence_metrics": {
+                    "occurrences": stats['occurrences'],
+                    "average_distance": round(stats['avg_distance'], 4),
+                    "min_distance": round(stats['min_distance'], 4),
+                    "weighted_score": round(stats['weighted_score'], 4),
+                    "confidence_percentage": round((1 - stats['min_distance']) * 100, 2),
+                    "distances": stats['distances']
+                }
+            },
+            "all_detected_matches": [
+                {
+                    "person_name": name,
+                    "metrics": {
+                        "occurrences": len(distances),
+                        "average_distance": round(sum(distances) / len(distances), 4),
+                        "min_distance": round(min(distances), 4),
+                        "confidence_percentage": round((1 - min(distances)) * 100, 2),
+                        "distances": distances
+                    }
+                }
+                for name, distances in all_matches.items()
+            ],
+            "processing_mode": "batched"
+        }
