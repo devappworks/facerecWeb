@@ -121,10 +121,7 @@ class BatchRecognitionService:
                 distance_metric=distance_metric,
                 enforce_detection=False,
                 threshold=threshold,
-                silent=True,  # Stišamo output za batch processing
-                # Dodatne optimizacije za threading:
-                refresh_db=False,  # Ne refresh-uj db svaki put
-                batched=False  # Eksplicitno disable batching u DeepFace
+                silent=True  # Stišamo output za batch processing
             )
             
             processing_time = time.time() - batch_start_time
