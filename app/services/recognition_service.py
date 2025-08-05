@@ -325,6 +325,19 @@ class RecognitionService:
                 if use_batched:
                     # BATCHED MODE: DeepFace vraća list of dicts
                     logger.info("Using BATCHED functions (list of dicts)")
+                    
+                    # DEBUG: Ispišimo stvarnu strukturu podataka
+                    logger.info(f"DEBUG: dfs type = {type(dfs)}")
+                    logger.info(f"DEBUG: dfs length = {len(dfs) if dfs else 'None'}")
+                    if dfs and len(dfs) > 0:
+                        logger.info(f"DEBUG: dfs[0] type = {type(dfs[0])}")
+                        logger.info(f"DEBUG: dfs[0] = {dfs[0]}")
+                        if hasattr(dfs[0], '__len__'):
+                            logger.info(f"DEBUG: dfs[0] length = {len(dfs[0])}")
+                            if len(dfs[0]) > 0:
+                                logger.info(f"DEBUG: dfs[0][0] type = {type(dfs[0][0])}")
+                                logger.info(f"DEBUG: dfs[0][0] = {dfs[0][0]}")
+                    
                     RecognitionService.log_deepface_results_batched(dfs)
                     filtered_dfs = RecognitionService.filter_recognition_results_by_valid_faces_batched(
                         dfs, final_valid_faces, resized_width, resized_height
