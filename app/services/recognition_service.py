@@ -302,7 +302,7 @@ class RecognitionService:
                 if clean_domain == "serbia":
                     use_batched = True
                 else:
-                    use_batched = True
+                    use_batched = False
                 
                 logger.info("Building VGG-Face model...")
                 _ = DeepFace.build_model("VGG-Face")
