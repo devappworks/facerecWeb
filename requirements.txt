@@ -10,7 +10,7 @@ Pillow>=11.1.0
 opencv-python>=4.8.0
 
 # Web framework and utilities
-Flask>=3.1.0
+Flask>=2.0.2
 # flask-cors==4.0.1
 python-dotenv>=1.1.0
 
