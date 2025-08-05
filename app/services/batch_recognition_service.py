@@ -184,7 +184,7 @@ class BatchRecognitionService:
         Args:
             image_bytes: Bytes test slike
             domain: Domain za pretragu
-            max_threads: Maksimalni broj thread-ova (default je MAX_BATCH_THREADS)
+            max_threads: Maksimalni broj thread-ova (default je pametno izračunat)
             
         Returns:
             Dict sa rezultatima u istom formatu kao postojeći sistem
@@ -223,6 +223,14 @@ class BatchRecognitionService:
                 f.write(resized_image.getvalue())
             logger.info(f"Resized image saved temporarily at: {image_path}")
             
+            # VAŽNO: Pre-load model JEDNOM za sve threadove!
+            logger.info("Pre-loading VGG-Face model to avoid thread competition...")
+            try:
+                _ = DeepFace.build_model("VGG-Face")
+                logger.info("Model pre-loaded successfully")
+            except Exception as e:
+                logger.warning(f"Model pre-loading failed (continuing anyway): {str(e)}")
+            
             # Izvadi lica (isti kod kao u RecognitionService!)
             faces = DeepFace.extract_faces(
                 img_path=image_path,
@@ -259,13 +267,18 @@ class BatchRecognitionService:
                     "message": f"No batch structure found for domain: {domain}. Please run batch migration first."
                 }
             
-            logger.info(f"Processing {len(batch_folders)} batches with {max_threads or BatchRecognitionService.MAX_BATCH_THREADS} threads")
+            # PAMETNO IZRAČUNAVANJE THREAD COUNT-a
+            # Heuristika: max 3 threada ili 1 thread po 2 batch-a
+            optimal_threads = min(3, max(1, len(batch_folders) // 2)) if max_threads is None else max_threads
+            optimal_threads = min(optimal_threads, len(batch_folders))  # Ne više od batch-eva
+            
+            logger.info(f"Processing {len(batch_folders)} batches with {optimal_threads} threads (optimal calculation)")
+            logger.info(f"User requested: {max_threads}, calculated optimal: {optimal_threads}")
             
             # PARALELNO PROCESIRANJE BATCH-EVA
             batch_results = []
-            max_workers = min(max_threads or BatchRecognitionService.MAX_BATCH_THREADS, len(batch_folders))
             
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            with ThreadPoolExecutor(max_workers=optimal_threads) as executor:
                 # Pokreni sve batch-eve simultano
                 future_to_batch = {}
                 
@@ -360,7 +373,12 @@ class BatchRecognitionService:
                     "processed_batches": len([r for r in batch_results if r["status"] == "success"]),
                     "failed_batches": len([r for r in batch_results if r["status"] == "error"]),
                     "total_images_searched": sum(r.get("image_count", 0) for r in batch_results),
-                    "batch_details": json_safe_batch_details  # JSON-safe verzija
+                    "batch_details": json_safe_batch_details,  # JSON-safe verzija
+                    "thread_optimization": {
+                        "requested_threads": max_threads,
+                        "optimal_threads": optimal_threads,
+                        "total_batches": len(batch_folders)
+                    }
                 }
             }
             
