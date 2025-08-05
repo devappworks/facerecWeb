@@ -17,7 +17,7 @@ python-dotenv>=1.1.0
 # Face detection
 --extra-index-url https://pypi.org/simple/
 fire==0.7.0
-deepface==0.0.93
+deepface==0.0.94
 
 # Additional dependencies for deepface
 mtcnn>=0.1.0
