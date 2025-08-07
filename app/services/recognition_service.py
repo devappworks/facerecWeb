@@ -44,7 +44,8 @@ class RecognitionService:
 
         print(f"\n➡️ Lice {index}: {facial_area}, Confidence={confidence:.3f}")
 
-        if confidence >= 0.99:
+        # Povećao sam confidence prag sa 0.99 na 0.995 za strožu validaciju
+        if confidence >= 0.995:
             # Check if left_eye and right_eye coordinates are identical
             if FaceValidationService.has_identical_eye_coordinates(facial_area):
                 left_eye = facial_area.get("left_eye")
@@ -55,15 +56,16 @@ class RecognitionService:
             print("✅ Validno lice - radim prepoznavanje.")
             return True
         else:
-            print("⚠️ Niska sigurnost detekcije - preskačem ovo lice.")
+            print(f"⚠️ Niska sigurnost detekcije ({confidence:.3f} < 0.995) - preskačem ovo lice.")
+            logger.info(f"Face {index} rejected - low confidence ({confidence:.3f} < 0.995)")
             return False
 
 
 
     @staticmethod
-    def check_face_blur_and_create_info(cropped_face, facial_area, index, original_width, original_height, resized_width, resized_height):
+    def check_face_quality_and_create_info(cropped_face, facial_area, index, original_width, original_height, resized_width, resized_height):
         """
-        Proverava zamagljenost lica i kreira info objekat ako je lice validno
+        Proverava kvalitet lica (zamagljenost, kontrast, osvetljenost) i kreira info objekat ako je lice validno
         
         Args:
             cropped_face (np.array): Array slike
@@ -78,28 +80,20 @@ class RecognitionService:
             dict or None: Info objekat ako je lice validno, None ako nije
         """
         try:
-            # Convert cropped face to format needed for blur detection
-            # The is_blurred method expects normalized array (0-1 range)
-            cropped_face_normalized = cropped_face.astype(np.float32) / 255.0
+            # Nova, poboljšana validacija kvaliteta lica
+            is_quality_valid = RecognitionService.validate_face_quality(cropped_face, index)
             
-            # Check if face is blurry
-            is_blurry = FaceProcessingService.is_blurred(cropped_face_normalized, 1)
-            
-            if is_blurry:
-                print(f"⚠️ Lice {index} je zamagljeno - odbacujem.")
-                logger.info(f"Face {index} is blurry - rejecting")
+            if not is_quality_valid:
                 return None
             else:
-                print(f"✅ Lice {index} je oštro - dodajem u validne.")
-                logger.info(f"Face {index} is sharp - adding to valid faces")
                 # Kreiraj info objekat sa originalnim koordinatama
                 return FaceValidationService.create_face_info(
                     facial_area, index, original_width, original_height, resized_width, resized_height
                 )
                 
-        except Exception as blur_error:
-            logger.error(f"Error checking blur for face {index}: {str(blur_error)}")
-            print(f"❌ Greška pri proveri zamućenosti lica {index}: {str(blur_error)}")
+        except Exception as quality_error:
+            logger.error(f"Error checking face quality for face {index}: {str(quality_error)}")
+            print(f"❌ Greška pri proveri kvaliteta lica {index}: {str(quality_error)}")
             return None
 
     @staticmethod
@@ -133,8 +127,8 @@ class RecognitionService:
         h = facial_area["h"]
         cropped_face = img_cv[y:y+h, x:x+w]
         
-        # Provera zamagljenosti i kreiranje info objekta
-        return RecognitionService.check_face_blur_and_create_info(
+        # Provera kvaliteta i kreiranje info objekta
+        return RecognitionService.check_face_quality_and_create_info(
             cropped_face, facial_area, index, original_width, original_height, resized_width, resized_height
         )
 
@@ -1342,3 +1336,81 @@ class RecognitionService:
             ],
             "processing_mode": "batched"
         }
+
+    @staticmethod
+    def validate_face_quality(cropped_face, index):
+        """
+        Dodatne validacije kvaliteta lica za eliminisanje lažno pozitivnih (lica u pozadini)
+        
+        Args:
+            cropped_face (np.array): Array slike lica
+            index (int): Indeks lica
+            
+        Returns:
+            bool: True ako je lice validnog kvaliteta
+        """
+        try:
+            # Convert to uint8 if needed
+            if cropped_face.dtype == 'float64' or cropped_face.dtype == 'float32':
+                face_uint8 = (cropped_face * 255).astype(np.uint8)
+            else:
+                face_uint8 = cropped_face.astype(np.uint8)
+            
+            # Convert to grayscale
+            gray = cv2.cvtColor(face_uint8, cv2.COLOR_BGR2GRAY)
+            
+            # 1. POBOLJŠANA BLUR DETEKCIJA - strožiji prag
+            laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+            laplacian_var = laplacian.var()
+            
+            # Povećao sam prag sa 55 na 100 za stroža merila
+            if laplacian_var < 100:
+                print(f"⚠️ Lice {index} je zamagljeno (Laplacian var: {laplacian_var:.2f}) - odbacujem.")
+                logger.info(f"Face {index} rejected - too blurry (Laplacian variance: {laplacian_var:.2f})")
+                return False
+            
+            # 2. KONTRAST VALIDACIJA
+            # Računam standardnu devijaciju piksela kao meru kontrasta
+            contrast = gray.std()
+            min_contrast = 25.0  # Minimalni kontrast
+            
+            if contrast < min_contrast:
+                print(f"⚠️ Lice {index} ima slab kontrast ({contrast:.2f}) - odbacujem.")
+                logger.info(f"Face {index} rejected - low contrast ({contrast:.2f})")
+                return False
+            
+            # 3. JASNOĆA/OSVETLJENJE VALIDACIJA
+            mean_brightness = gray.mean()
+            
+            # Odbaci lica koja su previše tamna ili previše svetla
+            if mean_brightness < 30 or mean_brightness > 220:
+                print(f"⚠️ Lice {index} ima lošu osvetljenost ({mean_brightness:.2f}) - odbacujem.")
+                logger.info(f"Face {index} rejected - poor lighting (brightness: {mean_brightness:.2f})")
+                return False
+            
+            # 4. DODATNA DETEKCIJA OŠTRINE PREKO GRADIJENTA
+            # Sobel operator za detekciju ivica
+            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+            sobel_magnitude = np.sqrt(sobelx**2 + sobely**2)
+            edge_density = np.mean(sobel_magnitude)
+            
+            min_edge_density = 15.0  # Minimalna gustina ivica
+            if edge_density < min_edge_density:
+                print(f"⚠️ Lice {index} ima malu gustinu ivica ({edge_density:.2f}) - odbacujem.")
+                logger.info(f"Face {index} rejected - low edge density ({edge_density:.2f})")
+                return False
+            
+            print(f"✅ Lice {index} prošlo sve kvalitativne provere:")
+            print(f"   📏 Laplacian var: {laplacian_var:.2f} (>100)")
+            print(f"   🎨 Kontrast: {contrast:.2f} (>25)")
+            print(f"   💡 Osvetljenost: {mean_brightness:.2f} (30-220)")
+            print(f"   🔍 Gustina ivica: {edge_density:.2f} (>15)")
+            
+            logger.info(f"Face {index} passed quality checks - Laplacian: {laplacian_var:.2f}, Contrast: {contrast:.2f}, Brightness: {mean_brightness:.2f}, Edge density: {edge_density:.2f}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in face quality validation for face {index}: {str(e)}")
+            print(f"❌ Greška u validaciji kvaliteta lica {index}: {str(e)}")
+            return False
