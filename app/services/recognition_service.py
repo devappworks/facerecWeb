@@ -285,6 +285,18 @@ class RecognitionService:
                 # Finalna provera - zadržati samo najveća lica
                 final_valid_faces = FaceValidationService.process_face_filtering(valid_faces)
                 
+                # Early exit ako nema validnih lica nakon svih provera
+                if len(final_valid_faces) == 0:
+                    print("🚫 Prekidam face recognition - nema validnih lica za obradu.")
+                    logger.info("Stopping face recognition - no valid faces to process after all checks")
+                    return {
+                        "status": "no_faces",
+                        "message": "No valid faces found after validation checks",
+                        "recognized_faces": [],
+                        "total_faces_detected": len(faces),
+                        "valid_faces_after_filtering": 0
+                    }
+                
             try:
                 # Definišemo parametre
                 model_name = "VGG-Face"
