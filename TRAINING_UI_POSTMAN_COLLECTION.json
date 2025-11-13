@@ -1,0 +1,434 @@
+{
+  "info": {
+    "name": "Face Recognition Training API",
+    "description": "API collection for the face recognition training UI",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Get Token by Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/token-by-email",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "token-by-email"]
+            },
+            "description": "Get authentication token by email address"
+          },
+          "response": []
+        },
+        {
+          "name": "Validate Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/validate-email",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "validate-email"]
+            },
+            "description": "Check if email has access without returning token"
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "health"]
+            },
+            "description": "Check authentication service health"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Training Data Collection",
+      "item": [
+        {
+          "name": "Generate Celebrity Names",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/excel/check-excel?country=Serbia",
+              "host": ["{{base_url}}"],
+              "path": ["api", "excel", "check-excel"],
+              "query": [
+                {
+                  "key": "country",
+                  "value": "Serbia",
+                  "description": "Country to generate celebrities for"
+                }
+              ]
+            },
+            "description": "Generate celebrity names using AI for a specific country"
+          },
+          "response": []
+        },
+        {
+          "name": "Process Next Person",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/excel/process",
+              "host": ["{{base_url}}"],
+              "path": ["api", "excel", "process"]
+            },
+            "description": "Process next person in queue - download and validate images"
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Manual Image",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "person",
+                  "value": "John Doe",
+                  "type": "text"
+                },
+                {
+                  "key": "created_date",
+                  "value": "2025-01-13",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/upload-with-domain",
+              "host": ["{{base_url}}"],
+              "path": ["upload-with-domain"]
+            },
+            "description": "Manually upload an image for a person"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Face Recognition",
+      "item": [
+        {
+          "name": "Recognize Face (Single)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/recognize",
+              "host": ["{{base_url}}"],
+              "path": ["recognize"]
+            },
+            "description": "Test face recognition with current system"
+          },
+          "response": []
+        },
+        {
+          "name": "Recognize Face (A/B Test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "image_id",
+                  "value": "test_001",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "ground_truth",
+                  "value": "John Doe",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/test/recognize",
+              "host": ["{{base_url}}"],
+              "path": ["api", "test", "recognize"]
+            },
+            "description": "Test both current and improved recognition systems"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "A/B Testing Metrics",
+      "item": [
+        {
+          "name": "Daily Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/test/metrics/daily?date=2025-01-13",
+              "host": ["{{base_url}}"],
+              "path": ["api", "test", "metrics", "daily"],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2025-01-13",
+                  "description": "Date in YYYY-MM-DD format",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get daily A/B testing metrics"
+          },
+          "response": []
+        },
+        {
+          "name": "Weekly Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/test/metrics/weekly",
+              "host": ["{{base_url}}"],
+              "path": ["api", "test", "metrics", "weekly"]
+            },
+            "description": "Get weekly A/B testing metrics"
+          },
+          "response": []
+        },
+        {
+          "name": "Test Health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/test/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "test", "health"]
+            },
+            "description": "Check A/B testing system health"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Production Management",
+      "item": [
+        {
+          "name": "Sync to Production",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sync-faces?source_dir=storage/recognized_faces&target_dir=storage/recognized_faces_prod",
+              "host": ["{{base_url}}"],
+              "path": ["sync-faces"],
+              "query": [
+                {
+                  "key": "source_dir",
+                  "value": "storage/recognized_faces",
+                  "disabled": true
+                },
+                {
+                  "key": "target_dir",
+                  "value": "storage/recognized_faces_prod",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Sync validated faces to production database"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Get Name Mappings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/name-mappings",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "name-mappings"]
+            },
+            "description": "Get all name mappings (normalized to original)"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Image",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filename\": \"John_Doe_2025-01-13_04400301.jpg\",\n  \"action\": \"delete\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/manage-image",
+              "host": ["{{base_url}}"],
+              "path": ["manage-image"]
+            },
+            "description": "Delete an image from the database"
+          },
+          "response": []
+        },
+        {
+          "name": "Edit Image Person",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filename\": \"John_Doe_2025-01-13_04400301.jpg\",\n  \"action\": \"edit\",\n  \"person\": \"Jane Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/manage-image",
+              "host": ["{{base_url}}"],
+              "path": ["manage-image"]
+            },
+            "description": "Change the person associated with an image"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
