@@ -6,6 +6,7 @@ from app.routes.excel_routes import excel_bp
 from app.routes.auth_routes import auth_routes
 from app.routes.batch_recognition_routes import batch_recognition_bp
 from app.routes.test_recognition_routes import test_recognition_routes
+from app.routes.training_routes import training_bp
 
 def create_app():
     app = Flask(__name__)
@@ -21,5 +22,6 @@ def create_app():
     app.register_blueprint(auth_routes)
     app.register_blueprint(batch_recognition_bp)
     app.register_blueprint(test_recognition_routes)
+    app.register_blueprint(training_bp)
 
     return app 
