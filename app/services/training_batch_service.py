@@ -440,7 +440,10 @@ class TrainingBatchService:
         # Convert to lowercase
         name = name.lower()
 
-        # Normalize unicode
+        # Handle Serbian Đ/đ explicitly (not handled by unicodedata)
+        name = name.replace('đ', 'd').replace('Đ', 'd')
+
+        # Normalize unicode (handles Č→C, Ć→C, Š→S, Ž→Z, etc.)
         name = unicodedata.normalize('NFKD', name)
         name = ''.join([c for c in name if not unicodedata.combining(c)])
 
