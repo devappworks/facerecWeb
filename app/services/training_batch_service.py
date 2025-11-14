@@ -54,13 +54,13 @@ class TrainingBatchService:
 
             # Check which ones already exist in production DB
             production_dir = os.path.join(cls.PRODUCTION_PATH, domain)
-            existing_folders = set()
+            existing_folders = {}  # Map normalized name -> actual folder name
 
             if os.path.exists(production_dir):
-                existing_folders = {
-                    folder.lower() for folder in os.listdir(production_dir)
-                    if os.path.isdir(os.path.join(production_dir, folder))
-                }
+                for folder in os.listdir(production_dir):
+                    if os.path.isdir(os.path.join(production_dir, folder)):
+                        normalized = cls._normalize_name(folder)
+                        existing_folders[normalized] = folder
 
             # Process candidates
             candidates = []
@@ -69,13 +69,31 @@ class TrainingBatchService:
                 folder_name = f"{celeb['name']}_{celeb['last_name']}".lower().replace(' ', '_')
                 folder_name_normalized = cls._normalize_name(folder_name)
 
-                # Check if exists
-                exists = folder_name_normalized in existing_folders
+                # Check if exists (exact match or fuzzy match)
+                actual_folder_name = None
+                exists = False
+
+                # 1. Try exact match
+                if folder_name_normalized in existing_folders:
+                    exists = True
+                    actual_folder_name = existing_folders[folder_name_normalized]
+                else:
+                    # 2. Try fuzzy match (check if normalized name is similar)
+                    # This handles cases like "Novak Djokovic" vs "Novak_Djokovic_Tennis"
+                    for norm_name, actual_name in existing_folders.items():
+                        # Check if either contains the other
+                        if (folder_name_normalized in norm_name or
+                            norm_name in folder_name_normalized or
+                            cls._name_similarity(folder_name_normalized, norm_name) > 0.8):
+                            exists = True
+                            actual_folder_name = actual_name
+                            logger.info(f"Fuzzy match: '{folder_name_normalized}' matched with '{actual_name}'")
+                            break
 
                 # Count existing photos if exists
                 photo_count = 0
-                if exists:
-                    person_path = os.path.join(production_dir, folder_name_normalized)
+                if exists and actual_folder_name:
+                    person_path = os.path.join(production_dir, actual_folder_name)
                     if os.path.exists(person_path):
                         photo_count = len([
                             f for f in os.listdir(person_path)
@@ -433,3 +451,40 @@ class TrainingBatchService:
         name = name.replace(' ', '_')
 
         return name.strip('_')
+
+    @staticmethod
+    def _name_similarity(name1: str, name2: str) -> float:
+        """
+        Calculate similarity between two names using Levenshtein distance.
+        Returns a value between 0 (completely different) and 1 (identical).
+        """
+        if name1 == name2:
+            return 1.0
+
+        # Simple character-based similarity
+        len1, len2 = len(name1), len(name2)
+        if len1 == 0 or len2 == 0:
+            return 0.0
+
+        # Calculate Levenshtein distance (simple implementation)
+        if len1 > len2:
+            name1, name2 = name2, name1
+            len1, len2 = len2, len1
+
+        current_row = range(len1 + 1)
+        for i in range(1, len2 + 1):
+            previous_row = current_row
+            current_row = [i] + [0] * len1
+            for j in range(1, len1 + 1):
+                add = previous_row[j] + 1
+                delete = current_row[j - 1] + 1
+                change = previous_row[j - 1]
+                if name1[j - 1] != name2[i - 1]:
+                    change += 1
+                current_row[j] = min(add, delete, change)
+
+        distance = current_row[len1]
+        max_len = max(len1, len2)
+        similarity = 1 - (distance / max_len)
+
+        return similarity
