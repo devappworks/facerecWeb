@@ -14,4 +14,11 @@ class Config:
     
     # Google Custom Search API configuration
     SERPAPI_SEARCH_API_KEY = os.getenv('SERPAPI_SEARCH_API_KEY', 'af309518c81f312d3abcffb4fc2165e6ae6bd320b0d816911d0d1153ccea88c8')
-    GOOGLE_SEARCH_CX = os.getenv('GOOGLE_SEARCH_CX', '444622b2b520b4d97') 
+    GOOGLE_SEARCH_CX = os.getenv('GOOGLE_SEARCH_CX', '444622b2b520b4d97')
+
+    # Wikimedia image download configuration (Waterfall approach)
+    TARGET_IMAGES_PER_PERSON = int(os.getenv('TARGET_IMAGES_PER_PERSON', '40'))
+    WIKIMEDIA_MINIMUM_THRESHOLD = int(os.getenv('WIKIMEDIA_MINIMUM_THRESHOLD', '20'))
+    # If Wikimedia provides >= TARGET_IMAGES_PER_PERSON: Skip SERP entirely (100% free!)
+    # If Wikimedia provides >= WIKIMEDIA_MINIMUM_THRESHOLD: Top up with SERP to reach target
+    # If Wikimedia provides < WIKIMEDIA_MINIMUM_THRESHOLD: Use SERP as primary source 

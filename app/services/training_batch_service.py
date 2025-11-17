@@ -15,8 +15,24 @@ import logging
 
 from app.services.wikidata_service import WikidataService
 from app.services.image_service import ImageService
+from app.services.wikimedia_image_service import WikimediaImageService
 
 logger = logging.getLogger(__name__)
+
+# Configuration for image download waterfall (loaded from config.py or environment)
+def get_image_config():
+    """Get image download configuration from Flask app config"""
+    try:
+        from flask import current_app
+        return (
+            current_app.config.get('TARGET_IMAGES_PER_PERSON', 40),
+            current_app.config.get('WIKIMEDIA_MINIMUM_THRESHOLD', 20)
+        )
+    except:
+        # Fallback if not in app context
+        return 40, 20
+
+TARGET_IMAGES_PER_PERSON, WIKIMEDIA_MINIMUM_THRESHOLD = get_image_config()
 
 
 class TrainingBatchService:
@@ -108,7 +124,9 @@ class TrainingBatchService:
                     "country": celeb['country'],
                     "description": celeb['description'],
                     "wikidata_id": celeb['wikidata_id'],
+                    "image_url": celeb.get('image_url', ''),  # Primary image from Wikidata P18
                     "has_wikipedia_image": celeb['has_image'],
+                    "sitelinks": celeb.get('sitelinks', 0),  # Notability metric
                     "exists_in_db": exists,
                     "existing_photo_count": photo_count,
                     "folder_name": folder_name_normalized
@@ -384,19 +402,90 @@ class TrainingBatchService:
                         # Update status to processing
                         person['status'] = 'processing'
                         person['started_at'] = datetime.now().isoformat()
-                        person['current_step'] = 'downloading_images'
+                        person['current_step'] = 'downloading_images_wikimedia'
                         cls._save_batch(batch_file, batch_meta)
 
-                        # Fetch images
-                        result = image_service.fetch_and_save_images(
-                            person['name'],
-                            person['last_name'],
-                            person['occupation']
+                        # WATERFALL APPROACH: Try Wikimedia first, then SERP as fallback
+                        total_downloaded = 0
+                        wikimedia_count = 0
+                        serp_count = 0
+
+                        # Step 1: Try Wikimedia Commons (FREE!)
+                        logger.info(f"[Waterfall] Attempting Wikimedia download for {person['full_name']}")
+
+                        wikimedia_result = WikimediaImageService.get_images_for_person(
+                            wikidata_id=person.get('wikidata_id'),
+                            primary_image_url=person.get('image_url', ''),
+                            person_name=f"{person['name']}_{person['last_name']}",
+                            storage_path=image_service.storage_path,
+                            target_count=TARGET_IMAGES_PER_PERSON
                         )
 
-                        person['photos_downloaded'] = result.get('count', 0)
+                        if wikimedia_result.get('success'):
+                            wikimedia_count = wikimedia_result.get('images_downloaded', 0)
+                            total_downloaded = wikimedia_count
+                            logger.info(f"[Waterfall] ✅ Wikimedia: {wikimedia_count} images downloaded")
+                        else:
+                            logger.warning(f"[Waterfall] ⚠️ Wikimedia failed: {wikimedia_result.get('error', 'Unknown error')}")
+
+                        # Step 2: Decide if we need SERP supplement
+                        need_serp = False
+                        serp_reason = ""
+
+                        if total_downloaded >= TARGET_IMAGES_PER_PERSON:
+                            # We have enough from Wikimedia!
+                            serp_reason = f"Not needed - {total_downloaded} images from Wikimedia"
+                            logger.info(f"[Waterfall] 🎉 {serp_reason}")
+
+                        elif total_downloaded >= WIKIMEDIA_MINIMUM_THRESHOLD:
+                            # We have decent amount, just top up
+                            need_serp = True
+                            serp_needed = TARGET_IMAGES_PER_PERSON - total_downloaded
+                            serp_reason = f"Topping up - have {total_downloaded}, need {serp_needed} more"
+                            logger.info(f"[Waterfall] 📸 {serp_reason}")
+
+                        else:
+                            # Very few on Wikimedia, use SERP as primary
+                            need_serp = True
+                            serp_reason = f"Primary source - only {total_downloaded} on Wikimedia"
+                            logger.info(f"[Waterfall] 🔍 {serp_reason}")
+
+                        # Step 3: Use SERP if needed
+                        if need_serp:
+                            person['current_step'] = 'downloading_images_serp'
+                            cls._save_batch(batch_file, batch_meta)
+
+                            logger.info(f"[Waterfall] Fetching from SERP: {serp_reason}")
+
+                            try:
+                                # Calculate how many we need from SERP
+                                serp_limit = TARGET_IMAGES_PER_PERSON - total_downloaded
+
+                                # Modify image_service to accept max_images parameter
+                                # For now, it will download up to 70 and we'll use what we get
+                                serp_result = image_service.fetch_and_save_images(
+                                    person['name'],
+                                    person['last_name'],
+                                    person['occupation']
+                                )
+
+                                serp_count = serp_result.get('count', 0)
+                                total_downloaded += serp_count
+                                logger.info(f"[Waterfall] ✅ SERP: {serp_count} images downloaded")
+
+                            except Exception as serp_error:
+                                logger.error(f"[Waterfall] ❌ SERP failed: {str(serp_error)}")
+
+                        # Record results
+                        person['photos_downloaded'] = total_downloaded
+                        person['photos_from_wikimedia'] = wikimedia_count
+                        person['photos_from_serp'] = serp_count
+                        person['image_source_strategy'] = serp_reason
                         person['current_step'] = 'validating_faces'
                         cls._save_batch(batch_file, batch_meta)
+
+                        logger.info(f"[Waterfall] 📊 Final: {total_downloaded} total "
+                                  f"(Wikimedia: {wikimedia_count}, SERP: {serp_count})")
 
                         # Note: DeepFace validation happens automatically in background
                         # We'll mark as completed immediately, validation continues async
