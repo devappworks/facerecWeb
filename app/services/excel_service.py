@@ -180,14 +180,15 @@ class ExcelService:
                 "message": f"Greška: {str(e)}"
             }
 
-    def start_processing_thread(self, check_result, country):
+    def start_processing_thread(self, check_result, country, occupation_filter=None):
         """
         Pokreće thread za obradu Excel fajla
-        
+
         Args:
             check_result (dict): Rezultat provere Excel fajla
             country (str): Zemlja za koju se traže poznate ličnosti
-            
+            occupation_filter (str, optional): Comma-separated list of occupations to process
+
         Returns:
             dict: Status pokretanja thread-a
         """
@@ -195,25 +196,30 @@ class ExcelService:
             # Pokrenimo thread za obradu
             import threading
             from flask import current_app
-            
+
             # Dobijamo app_context za korišćenje u thread-u
             app_context = current_app.app_context()
-            
+
             thread = threading.Thread(
                 target=self._process_excel_thread,
-                args=(app_context, country)
+                args=(app_context, country, occupation_filter)
             )
             thread.daemon = True
             thread.start()
-            
+
             # Dodajemo informaciju da je thread pokrenut
             result = check_result.copy()
             result["thread_started"] = True
             result["country"] = country
-            result["message"] = f"{result['message']}. Obrada je započeta u pozadini za zemlju: {country}."
-            
+            result["occupation_filter"] = occupation_filter
+
+            if occupation_filter:
+                result["message"] = f"{result['message']}. Obrada je započeta u pozadini za zemlju: {country}, zanimanja: {occupation_filter}."
+            else:
+                result["message"] = f"{result['message']}. Obrada je započeta u pozadini za zemlju: {country}."
+
             return result
-            
+
         except Exception as e:
             current_app.logger.error(f"Greška prilikom pokretanja thread-a: {str(e)}")
             return {
@@ -221,25 +227,39 @@ class ExcelService:
                 "message": f"Greška prilikom pokretanja thread-a: {str(e)}"
             }
 
-    def _process_excel_thread(self, app_context, country):
+    def _process_excel_thread(self, app_context, country, occupation_filter=None):
         """
         Metoda koja se izvršava u pozadinskom thread-u
-        
+
         Args:
             app_context: Flask aplikacioni kontekst
             country (str): Zemlja za koju se traže poznate ličnosti
+            occupation_filter (str, optional): Comma-separated list of occupations to process
         """
         with app_context:
             try:
                 current_app.logger.info(f"Započeta obrada Excel fajla u pozadini: {self.excel_path_occupation} za zemlju: {country}")
-                
+
+                # Parse occupation filter
+                allowed_occupations = None
+                if occupation_filter:
+                    allowed_occupations = [occ.strip() for occ in occupation_filter.split(',')]
+                    current_app.logger.info(f"Filtering occupations: {allowed_occupations}")
+
                 # Čitanje Excel fajla
                 df = pd.read_excel(self.excel_path_occupation)
-                
+
                 # Obrada svakog reda
                 for index, row in df.iterrows():
                     try:
-                        current_app.logger.info(f"Obrada reda {index+1}/{len(df)}/{row['Occupation']}")
+                        occupation = row['Occupation']
+
+                        # Skip if occupation filter is set and this occupation is not in the list
+                        if allowed_occupations and occupation not in allowed_occupations:
+                            current_app.logger.info(f"Skipping occupation {occupation} (not in filter)")
+                            continue
+
+                        current_app.logger.info(f"Obrada reda {index+1}/{len(df)}/{occupation}")
                         
                         from app.services.openai_service import OpenAIService
                         

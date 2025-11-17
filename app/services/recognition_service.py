@@ -1426,3 +1426,216 @@ class RecognitionService:
             logger.error(f"Error in face quality validation for face {index}: {str(e)}")
             print(f"❌ Greška u validaciji kvaliteta lica {index}: {str(e)}")
             return False
+
+    @staticmethod
+    def recognize_face_with_config(image_bytes, domain: str, config: dict):
+        """
+        Run face recognition with custom configuration for A/B testing
+
+        Args:
+            image_bytes: Image data (bytes or BytesIO)
+            domain: Domain for database lookup
+            config: Configuration dictionary with parameters:
+                - model_name: Model to use (e.g., "VGG-Face", "Facenet512")
+                - detector_backend: Detector (e.g., "retinaface")
+                - distance_metric: Metric (e.g., "cosine")
+                - recognition_threshold: Threshold for recognition
+                - detection_confidence_threshold: Threshold for face detection
+                - blur_threshold, contrast_threshold, etc.
+
+        Returns:
+            Recognition result dictionary
+        """
+        start_time = time.time()
+
+        try:
+            # Extract config parameters
+            model_name = config.get("model_name", "VGG-Face")
+            detector_backend = config.get("detector_backend", "retinaface")
+            distance_metric = config.get("distance_metric", "cosine")
+            recognition_threshold = config.get("recognition_threshold", 0.35)
+            detection_confidence_threshold = config.get("detection_confidence_threshold", 0.995)
+
+            logger.info(f"Running recognition with config: model={model_name}, threshold={recognition_threshold}, confidence={detection_confidence_threshold}")
+
+            # Clean domain for path
+            clean_domain = RecognitionService.clean_domain_for_path(domain)
+
+            # Handle image bytes
+            if isinstance(image_bytes, bytes):
+                image_bytes = BytesIO(image_bytes)
+
+            # Open and resize image
+            image = Image.open(image_bytes)
+            original_width, original_height = image.size
+
+            resized_image = ImageService.resize_image(image)
+            resized_width, resized_height = Image.open(resized_image).size
+
+            logger.info(f"Image resized from {original_width}x{original_height} to {resized_width}x{resized_height}")
+
+            # Save temporary image
+            temp_filename = f"temp_{int(time.time() * 1000)}.jpg"
+            image_path = os.path.join("storage/temp", temp_filename)
+            os.makedirs("storage/temp", exist_ok=True)
+
+            with open(image_path, "wb") as f:
+                f.write(resized_image.getvalue())
+            logger.info(f"Resized image saved temporarily at: {image_path}")
+
+            # Database path
+            db_path = os.path.join('storage/recognized_faces_prod', clean_domain)
+
+            # Extract faces with configurable confidence threshold
+            faces = DeepFace.extract_faces(
+                img_path=image_path,
+                detector_backend=detector_backend,
+                enforce_detection=False,
+                normalize_face=True,
+                align=True
+            )
+
+            if len(faces) == 0:
+                print("❌ Nema nijednog lica.")
+                return {
+                    "status": "no_faces",
+                    "message": "No faces detected in the image",
+                    "recognized_faces": [],
+                    "total_faces_detected": 0,
+                    "valid_faces_after_filtering": 0
+                }
+            else:
+                print(f"✅ Pronađeno lica: {len(faces)}")
+
+                # Process each face with configurable thresholds
+                valid_faces = []
+
+                for i, face in enumerate(faces):
+                    facial_area = face["facial_area"]
+                    confidence = face.get("confidence", 1)
+
+                    print(f"\n➡️ Lice {i+1}: {facial_area}, Confidence={confidence:.3f}")
+
+                    # Use configurable confidence threshold
+                    if confidence >= detection_confidence_threshold:
+                        # Check if left_eye and right_eye coordinates are identical
+                        if FaceValidationService.has_identical_eye_coordinates(facial_area):
+                            left_eye = facial_area.get("left_eye")
+                            print(f"⚠️ Lice {i+1} ima identične koordinate za levo i desno oko ({left_eye}) - preskačem.")
+                            logger.info(f"Face {i+1} has identical left_eye and right_eye coordinates ({left_eye}) - skipping")
+                            continue
+
+                        # Extract and validate face quality
+                        try:
+                            cropped_face = FaceProcessingService.extract_face_region(image_path, facial_area)
+                            is_quality_valid = RecognitionService.validate_face_quality(cropped_face, i+1)
+
+                            if is_quality_valid:
+                                face_info = FaceValidationService.create_face_info(
+                                    facial_area, i+1, original_width, original_height, resized_width, resized_height
+                                )
+                                if face_info:
+                                    valid_faces.append(face_info)
+                        except Exception as quality_error:
+                            logger.error(f"Error checking face quality for face {i+1}: {str(quality_error)}")
+                            continue
+                    else:
+                        print(f"⚠️ Niska sigurnost detekcije ({confidence:.3f} < {detection_confidence_threshold}) - preskačem ovo lice.")
+                        logger.info(f"Face {i+1} rejected - low confidence ({confidence:.3f} < {detection_confidence_threshold})")
+
+                # Final face filtering
+                final_valid_faces = FaceValidationService.process_face_filtering(valid_faces)
+
+                # Early exit if no valid faces
+                if len(final_valid_faces) == 0:
+                    print("🚫 Prekidam face recognition - nema validnih lica za obradu.")
+                    logger.info("Stopping face recognition - no valid faces to process after all checks")
+                    return {
+                        "status": "no_faces",
+                        "message": "No valid faces found after validation checks",
+                        "recognized_faces": [],
+                        "total_faces_detected": len(faces),
+                        "valid_faces_after_filtering": 0
+                    }
+
+            try:
+                # Determine batched mode
+                use_batched = True  # Default to batched mode
+
+                logger.info(f"Building {model_name} model...")
+                _ = DeepFace.build_model(model_name)
+                logger.info("Model built")
+                logger.info("DB path: " + db_path)
+                logger.info("Image Path: " + image_path)
+                logger.info(f"Using batched mode: {use_batched}")
+
+                # Run recognition with configurable parameters
+                dfs = DeepFace.find(
+                    img_path=image_path,
+                    db_path=db_path,
+                    model_name=model_name,
+                    detector_backend=detector_backend,
+                    distance_metric=distance_metric,
+                    enforce_detection=False,
+                    threshold=recognition_threshold,
+                    silent=False,
+                    batched=use_batched
+                )
+
+                # Process results based on batched mode
+                if use_batched:
+                    logger.info("Using BATCHED functions (List[List[Dict]])")
+                    RecognitionService.log_deepface_results_batched(dfs)
+                    filtered_dfs = RecognitionService.filter_recognition_results_by_valid_faces_batched(
+                        dfs, final_valid_faces, resized_width, resized_height
+                    )
+                    result = RecognitionService.analyze_recognition_results_batched(
+                        filtered_dfs,
+                        threshold=recognition_threshold,
+                        original_width=original_width,
+                        original_height=original_height,
+                        resized_width=resized_width,
+                        resized_height=resized_height
+                    )
+                else:
+                    logger.info("Using STANDARD functions (list of DataFrames)")
+                    RecognitionService.log_deepface_results(dfs)
+                    filtered_dfs = RecognitionService.filter_recognition_results_by_valid_faces(
+                        dfs, final_valid_faces, resized_width, resized_height
+                    )
+                    result = RecognitionService.analyze_recognition_results(
+                        filtered_dfs,
+                        threshold=recognition_threshold,
+                        original_width=original_width,
+                        original_height=original_height,
+                        resized_width=resized_width,
+                        resized_height=resized_height
+                    )
+
+                logger.info(f"Recognition completed in {time.time() - start_time:.2f}s")
+                return result
+
+            except Exception as e:
+                error_msg = f"Error during face recognition: {str(e)}"
+                logger.error(error_msg)
+                return {
+                    "status": "error",
+                    "message": error_msg,
+                    "recognized_faces": []
+                }
+
+        except Exception as e:
+            logger.error(f"Error in recognize_face_with_config: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "recognized_faces": []
+            }
+        finally:
+            # Cleanup
+            try:
+                if 'image_path' in locals() and os.path.exists(image_path):
+                    os.remove(image_path)
+                    logger.info(f"Cleaned up temporary file: {image_path}")
+            except Exception as e:
+                logger.error(f"Error cleaning up temporary file: {str(e)}")
