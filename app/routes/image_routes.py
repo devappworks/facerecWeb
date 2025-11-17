@@ -174,6 +174,7 @@ def transfer_images():
 
 @image_routes.route('/upload-for-detection', methods=['POST'])
 def upload_for_detection():
+    
     """
     Endpoint for uploading images for object detection.
     Images are resized and stored in storage/objectDetection.
