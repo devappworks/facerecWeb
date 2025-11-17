@@ -106,18 +106,23 @@ class WikidataService:
 
             # Build SPARQL query
             query = f"""
-            SELECT DISTINCT ?person ?personLabel ?personDescription ?image ?birthDate ?deathDate
+            SELECT DISTINCT ?person ?personLabel ?personDescription ?image ?birthDate ?deathDate ?sitelinks
             WHERE {{
               ?person wdt:P31 wd:Q5 .                    # is a human
               ?person wdt:P27 wd:{country_id} .          # citizenship
               ?person wdt:P106 wd:{occupation_id} .      # occupation
-              OPTIONAL {{ ?person wdt:P18 ?image . }}    # image (optional)
+              ?person wdt:P18 ?image .                   # image (REQUIRED for face training)
+              ?person wikibase:sitelinks ?sitelinks .    # Wikipedia article count (notability metric)
               OPTIONAL {{ ?person wdt:P569 ?birthDate . }}
               OPTIONAL {{ ?person wdt:P570 ?deathDate . }}
+
+              FILTER(?sitelinks > 5)                     # Only notable people (5+ Wikipedia articles)
+
               SERVICE wikibase:label {{
                 bd:serviceParam wikibase:language "en,sr" .
               }}
             }}
+            ORDER BY DESC(?sitelinks)                    # Most famous/notable first
             LIMIT {limit}
             """
 
@@ -171,7 +176,8 @@ class WikidataService:
                         'image_url': result.get('image', {}).get('value', ''),
                         'birth_date': result.get('birthDate', {}).get('value', ''),
                         'death_date': result.get('deathDate', {}).get('value', ''),
-                        'has_image': 'image' in result
+                        'has_image': 'image' in result,
+                        'sitelinks': int(result.get('sitelinks', {}).get('value', 0))
                     }
 
                     celebrities.append(celebrity)
