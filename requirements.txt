@@ -12,6 +12,7 @@ opencv-python>=4.8.0
 # Web framework and utilities
 Flask>=2.0.2
 flask-cors==4.0.1
+Flask-SQLAlchemy>=3.0.0
 python-dotenv>=1.1.0
 
 # Face detection

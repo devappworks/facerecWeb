@@ -39,7 +39,30 @@ class TrainingBatchService:
     """Service for managing batch training of celebrities"""
 
     BATCH_STORAGE = "storage/training_batches"
-    TRAINING_PASS_PATH = "storage/trainingPassSerbia"
+
+    # Domain path helpers (dynamic based on domain parameter)
+    @classmethod
+    def get_training_path(cls, domain: str) -> str:
+        """Get raw training path for domain"""
+        return f"storage/training/{domain}"
+
+    @classmethod
+    def get_staging_path(cls, domain: str) -> str:
+        """Get staging path for domain (trainingPass)"""
+        return f"storage/trainingPass/{domain}"
+
+    @classmethod
+    def get_production_path(cls, domain: str) -> str:
+        """Get production path for domain"""
+        return f"storage/recognized_faces_prod/{domain}"
+
+    @classmethod
+    def get_batched_path(cls, domain: str) -> str:
+        """Get batched path for domain"""
+        return f"storage/recognized_faces_batched/{domain}"
+
+    # Legacy paths for backward compatibility
+    TRAINING_PASS_PATH = "storage/trainingPass/serbia"  # Updated default
     PRODUCTION_PATH = "storage/recognized_faces_prod"
 
     @classmethod
@@ -296,8 +319,8 @@ class TrainingBatchService:
             Deployment result
         """
         try:
-            source_base = cls.TRAINING_PASS_PATH
-            target_dir = os.path.join(cls.PRODUCTION_PATH, domain)
+            source_base = cls.get_staging_path(domain)
+            target_dir = cls.get_production_path(domain)
 
             os.makedirs(target_dir, exist_ok=True)
 
@@ -392,7 +415,9 @@ class TrainingBatchService:
                 with open(batch_file, 'r', encoding='utf-8') as f:
                     batch_meta = json.load(f)
 
-                image_service = ImageService()
+                # Get domain from batch metadata
+                domain = batch_meta.get('domain', 'serbia')
+                image_service = ImageService(domain=domain)
 
                 # Process each person
                 for i, person in enumerate(batch_meta['people']):
