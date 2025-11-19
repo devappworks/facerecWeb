@@ -1,0 +1,112 @@
+{
+  "domains": [
+    {
+      "domain": "127.0.0.1",
+      "path": "storage/recognized_faces_prod/127.0.0.1",
+      "exists": true,
+      "total_photos": 0,
+      "total_persons": 0,
+      "persons": {},
+      "pickle_file": {
+        "exists": false,
+        "size_bytes": 0,
+        "size_human": "N/A",
+        "path": null
+      },
+      "warnings": [
+        "Pickle file not found: storage/recognized_faces_prod/127.0.0.1/representations_vgg_face.pkl"
+      ],
+      "health_score": 70
+    },
+    {
+      "domain": "facerecognition.mpanel.app",
+      "path": "storage/recognized_faces_prod/facerecognition.mpanel.app",
+      "exists": true,
+      "total_photos": 0,
+      "total_persons": 0,
+      "persons": {},
+      "pickle_file": {
+        "exists": false,
+        "size_bytes": 0,
+        "size_human": "N/A",
+        "path": null
+      },
+      "warnings": [
+        "Pickle file not found: storage/recognized_faces_prod/facerecognition.mpanel.app/representations_vgg_face.pkl"
+      ],
+      "health_score": 70
+    },
+    {
+      "domain": "media24",
+      "path": "storage/recognized_faces_prod/media24",
+      "exists": true,
+      "total_photos": 0,
+      "total_persons": 0,
+      "persons": {},
+      "pickle_file": {
+        "exists": false,
+        "size_bytes": 0,
+        "size_human": "N/A",
+        "path": null
+      },
+      "warnings": [
+        "Pickle file not found: storage/recognized_faces_prod/media24/representations_vgg_face.pkl"
+      ],
+      "health_score": 70
+    },
+    {
+      "domain": "rts",
+      "path": "storage/recognized_faces_prod/rts",
+      "exists": true,
+      "total_photos": 0,
+      "total_persons": 0,
+      "persons": {},
+      "pickle_file": {
+        "exists": false,
+        "size_bytes": 0,
+        "size_human": "N/A",
+        "path": null
+      },
+      "warnings": [
+        "Pickle file not found: storage/recognized_faces_prod/rts/representations_vgg_face.pkl"
+      ],
+      "health_score": 70
+    },
+    {
+      "domain": "serbia",
+      "path": "storage/recognized_faces_prod/serbia",
+      "exists": true,
+      "total_photos": 0,
+      "total_persons": 0,
+      "persons": {},
+      "pickle_file": {
+        "exists": false,
+        "size_bytes": 0,
+        "size_human": "N/A",
+        "path": null
+      },
+      "warnings": [
+        "Pickle file not found: storage/recognized_faces_prod/serbia/representations_vgg_face.pkl"
+      ],
+      "health_score": 70
+    },
+    {
+      "domain": "test",
+      "path": "storage/recognized_faces_prod/test",
+      "exists": true,
+      "total_photos": 0,
+      "total_persons": 0,
+      "persons": {},
+      "pickle_file": {
+        "exists": false,
+        "size_bytes": 0,
+        "size_human": "N/A",
+        "path": null
+      },
+      "warnings": [
+        "Pickle file not found: storage/recognized_faces_prod/test/representations_vgg_face.pkl"
+      ],
+      "health_score": 70
+    }
+  ]
+}
