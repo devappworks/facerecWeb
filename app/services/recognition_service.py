@@ -258,6 +258,10 @@ class RecognitionService:
             db_path = os.path.join('storage/recognized_faces_prod', clean_domain)
 
             # Extract faces
+            logger.info(f"[STANDARD] Calling DeepFace.extract_faces with detector={detector_backend}")
+            logger.info(f"[STANDARD] Image path: {image_path}, exists: {os.path.exists(image_path)}")
+            logger.info(f"[STANDARD] Image dimensions: {original_width}x{original_height} -> {resized_width}x{resized_height}")
+
             faces = DeepFace.extract_faces(
                 img_path=image_path,
                 detector_backend=detector_backend,
@@ -265,6 +269,10 @@ class RecognitionService:
                 normalize_face=True,
                 align=True
             )
+
+            logger.info(f"[STANDARD] DeepFace.extract_faces returned {len(faces)} faces")
+            for i, face in enumerate(faces):
+                logger.info(f"[STANDARD] Face {i+1}: confidence={face.get('confidence', 1):.4f}, area={face.get('facial_area')}")
 
             if len(faces) == 0:
                 print("❌ Nema nijednog lica.")
@@ -1461,15 +1469,21 @@ class RecognitionService:
             # Clean domain for path
             clean_domain = RecognitionService.clean_domain_for_path(domain)
 
-            # Handle image bytes
-            if isinstance(image_bytes, bytes):
-                image_bytes = BytesIO(image_bytes)
+            # Handle image bytes (same pattern as standard recognize_face method)
+            if hasattr(image_bytes, 'getvalue'):
+                # If BytesIO object, extract actual bytes
+                actual_bytes = image_bytes.getvalue()
+                image_bytes.seek(0)  # Reset pointer in case it's used again
+            else:
+                # If already bytes
+                actual_bytes = image_bytes
 
-            # Open and resize image
-            image = Image.open(image_bytes)
+            # Open image with fresh BytesIO
+            image = Image.open(BytesIO(actual_bytes))
             original_width, original_height = image.size
 
-            resized_image = ImageService.resize_image(image)
+            # Resize image - pass actual bytes
+            resized_image = ImageService.resize_image(actual_bytes)
             resized_width, resized_height = Image.open(resized_image).size
 
             logger.info(f"Image resized from {original_width}x{original_height} to {resized_width}x{resized_height}")
@@ -1483,10 +1497,14 @@ class RecognitionService:
                 f.write(resized_image.getvalue())
             logger.info(f"Resized image saved temporarily at: {image_path}")
 
-            # Database path
-            db_path = os.path.join('storage/recognized_faces_prod', clean_domain)
+            # Database path - use smaller test DB for A/B testing (1000 images vs 30k+)
+            db_path = os.path.join('storage/recognized_faces_test', clean_domain)
 
             # Extract faces with configurable confidence threshold
+            logger.info(f"[A/B TEST] Calling DeepFace.extract_faces with detector={detector_backend}")
+            logger.info(f"[A/B TEST] Image path: {image_path}, exists: {os.path.exists(image_path)}")
+            logger.info(f"[A/B TEST] Image dimensions: {original_width}x{original_height} -> {resized_width}x{resized_height}")
+
             faces = DeepFace.extract_faces(
                 img_path=image_path,
                 detector_backend=detector_backend,
@@ -1495,8 +1513,13 @@ class RecognitionService:
                 align=True
             )
 
+            logger.info(f"[A/B TEST] DeepFace.extract_faces returned {len(faces)} faces")
+            for i, face in enumerate(faces):
+                logger.info(f"[A/B TEST] Face {i+1}: confidence={face.get('confidence', 1):.4f}, area={face.get('facial_area')}")
+
             if len(faces) == 0:
                 print("❌ Nema nijednog lica.")
+                logger.warning(f"[A/B TEST] No faces detected in image!")
                 return {
                     "status": "no_faces",
                     "message": "No faces detected in the image",
@@ -1506,6 +1529,7 @@ class RecognitionService:
                 }
             else:
                 print(f"✅ Pronađeno lica: {len(faces)}")
+                logger.info(f"[A/B TEST] Processing {len(faces)} detected faces")
 
                 # Process each face with configurable thresholds
                 valid_faces = []
@@ -1515,36 +1539,55 @@ class RecognitionService:
                     confidence = face.get("confidence", 1)
 
                     print(f"\n➡️ Lice {i+1}: {facial_area}, Confidence={confidence:.3f}")
+                    logger.info(f"[A/B TEST] Face {i+1}: confidence={confidence:.4f}, threshold={detection_confidence_threshold}")
 
                     # Use configurable confidence threshold
                     if confidence >= detection_confidence_threshold:
+                        logger.info(f"[A/B TEST] Face {i+1}: PASSED confidence check")
                         # Check if left_eye and right_eye coordinates are identical
                         if FaceValidationService.has_identical_eye_coordinates(facial_area):
                             left_eye = facial_area.get("left_eye")
                             print(f"⚠️ Lice {i+1} ima identične koordinate za levo i desno oko ({left_eye}) - preskačem.")
-                            logger.info(f"Face {i+1} has identical left_eye and right_eye coordinates ({left_eye}) - skipping")
+                            logger.warning(f"[A/B TEST] Face {i+1}: FAILED - identical eye coordinates ({left_eye})")
                             continue
 
-                        # Extract and validate face quality
+                        logger.info(f"[A/B TEST] Face {i+1}: PASSED eye coordinates check")
+
+                        # Extract and validate face quality (same as standard method)
                         try:
-                            cropped_face = FaceProcessingService.extract_face_region(image_path, facial_area)
+                            img_cv = cv2.imread(image_path)
+                            x = facial_area["x"]
+                            y = facial_area["y"]
+                            w = facial_area["w"]
+                            h = facial_area["h"]
+                            cropped_face = img_cv[y:y+h, x:x+w]
+
                             is_quality_valid = RecognitionService.validate_face_quality(cropped_face, i+1)
+                            logger.info(f"[A/B TEST] Face {i+1}: quality validation result = {is_quality_valid}")
 
                             if is_quality_valid:
+                                logger.info(f"[A/B TEST] Face {i+1}: PASSED quality check")
                                 face_info = FaceValidationService.create_face_info(
                                     facial_area, i+1, original_width, original_height, resized_width, resized_height
                                 )
                                 if face_info:
                                     valid_faces.append(face_info)
+                                    logger.info(f"[A/B TEST] Face {i+1}: added to valid_faces list")
+                                else:
+                                    logger.warning(f"[A/B TEST] Face {i+1}: FAILED - create_face_info returned None")
+                            else:
+                                logger.warning(f"[A/B TEST] Face {i+1}: FAILED quality validation")
                         except Exception as quality_error:
-                            logger.error(f"Error checking face quality for face {i+1}: {str(quality_error)}")
+                            logger.error(f"[A/B TEST] Face {i+1}: ERROR during quality check: {str(quality_error)}")
                             continue
                     else:
                         print(f"⚠️ Niska sigurnost detekcije ({confidence:.3f} < {detection_confidence_threshold}) - preskačem ovo lice.")
-                        logger.info(f"Face {i+1} rejected - low confidence ({confidence:.3f} < {detection_confidence_threshold})")
+                        logger.warning(f"[A/B TEST] Face {i+1}: FAILED confidence check ({confidence:.3f} < {detection_confidence_threshold})")
 
+                logger.info(f"[A/B TEST] valid_faces count before final filtering: {len(valid_faces)}")
                 # Final face filtering
                 final_valid_faces = FaceValidationService.process_face_filtering(valid_faces)
+                logger.info(f"[A/B TEST] final_valid_faces count after filtering: {len(final_valid_faces)}")
 
                 # Early exit if no valid faces
                 if len(final_valid_faces) == 0:
@@ -1559,8 +1602,8 @@ class RecognitionService:
                     }
 
             try:
-                # Determine batched mode
-                use_batched = True  # Default to batched mode
+                # Disable batched mode for A/B testing - it's too slow even with 1000 images
+                use_batched = False  # Both models use non-batched mode for better performance
 
                 logger.info(f"Building {model_name} model...")
                 _ = DeepFace.build_model(model_name)
@@ -1626,6 +1669,7 @@ class RecognitionService:
 
         except Exception as e:
             logger.error(f"Error in recognize_face_with_config: {str(e)}")
+            logger.exception("Full traceback:")
             return {
                 "status": "error",
                 "message": str(e),
