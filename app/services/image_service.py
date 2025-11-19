@@ -25,11 +25,20 @@ class ImageService:
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
     MAX_IMAGE_SIZE = (1024, 1024)  # Maksimalna veličina slike
 
-    def __init__(self):
+    def __init__(self, domain='serbia'):
+        """
+        Initialize ImageService for a specific domain.
+
+        Args:
+            domain: Domain code (e.g., 'serbia', 'greece', 'slovenia')
+        """
+        self.domain = domain
         self.api_key = os.getenv('SERPAPI_SEARCH_API_KEY', 'af309518c81f312d3abcffb4fc2165e6ae6bd320b0d816911d0d1153ccea88c8')
         self.cx = os.getenv('GOOGLE_SEARCH_CX', '444622b2b520b4d97')
-        self.storage_path = os.getenv('IMAGE_STORAGE_PATH', 'storage/training/serbia')
-        self.training_pass_path = os.getenv('TRAINING_PASS_PATH', 'storage/trainingPassSerbia')
+
+        # Domain-specific paths
+        self.storage_path = f'storage/training/{domain}'
+        self.training_pass_path = f'storage/trainingPass/{domain}'
 
     @staticmethod
     def allowed_file(filename):
