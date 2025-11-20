@@ -546,7 +546,7 @@ final_result = "John"
        ▼
 ┌─────────────────────────────────────────────────┐
 │     Face Recognition (Your Existing System)      │
-│  - VGG-Face / Facenet512                        │
+│  - VGG-Face / ArcFace                        │
 │  - Quality validation                            │
 │  - Database lookup                               │
 └────────────────┬────────────────────────────────┘

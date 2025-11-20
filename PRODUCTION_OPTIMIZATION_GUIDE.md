@@ -9,7 +9,7 @@
 ## Table of Contents
 
 1. [Optimal Photos Per Person: The 40-50 Sweet Spot](#1-optimal-photos-per-person)
-2. [A/B Testing Models: VGG-Face vs Facenet512](#2-ab-testing-models)
+2. [A/B Testing Models: VGG-Face vs ArcFace](#2-ab-testing-models)
 3. [Pickle Files vs Vector Databases: Complete Comparison](#3-pickle-files-vs-vector-databases)
 4. [Production Recommendations](#4-production-recommendations)
 
@@ -178,11 +178,11 @@
 
 ---
 
-## 2. A/B Testing Models: VGG-Face vs Facenet512
+## 2. A/B Testing Models: VGG-Face vs ArcFace
 
-### Question: Which two models are we running? Why is Facenet512 slow?
+### Question: Which two models are we running? Why is ArcFace slow?
 
-**Short Answer**: You're testing **VGG-Face** (fast, production-proven) vs **Facenet512** (slower, potentially more accurate). Facenet512 is **10-40x slower** than VGG-Face due to model complexity.
+**Short Answer**: You're testing **VGG-Face** (fast, production-proven) vs **ArcFace** (slower, potentially more accurate). ArcFace is **10-40x slower** than VGG-Face due to model complexity.
 
 ### Your Current A/B Test Setup
 
@@ -197,9 +197,9 @@ Detector: RetinaFace
 Status: ✅ Production-proven, fast, reliable
 ```
 
-**Pipeline B (Test System - Facenet512)**:
+**Pipeline B (Test System - ArcFace)**:
 ```python
-Model: Facenet512
+Model: ArcFace
 Threshold: 0.40
 Detection confidence: 98%
 Detector: RetinaFace
@@ -234,7 +234,7 @@ Status: ⚠️ Extremely slow, timeouts regularly
 - ⚠️ Less robust to extreme poses
 - ⚠️ Larger embedding size (slower search)
 
-#### Facenet512 (Test - Slow)
+#### ArcFace (Test - Slow)
 
 **Architecture**:
 - **Base**: Inception-ResNet v1
@@ -267,13 +267,13 @@ Status: ⚠️ Extremely slow, timeouts regularly
 ```
 VGG-Face:     0.32 seconds per verification
 Facenet:      0.85 seconds per verification  (2.6x slower)
-Facenet512:   ~3-5 seconds per verification  (10-15x slower)
+ArcFace:   ~3-5 seconds per verification  (10-15x slower)
 ```
 
 **Real-World Reports** (GitHub Issues, 2024):
-- Users report Facenet512: **"400 seconds for some operations, 40 seconds for others"**
+- Users report ArcFace: **"400 seconds for some operations, 40 seconds for others"**
 - VGG-Face: **"Consistently fast, 0.3-0.5 seconds"**
-- Ratio: **Facenet512 is 10-40x slower** depending on hardware
+- Ratio: **ArcFace is 10-40x slower** depending on hardware
 
 **Why VGG-Face is Faster**:
 1. **Simpler architecture**: 22 layers vs 469 layers
@@ -281,7 +281,7 @@ Facenet512:   ~3-5 seconds per verification  (10-15x slower)
 3. **Optimized for CPU**: Traditional CNN structure
 4. **Mature implementation**: 9+ years of optimization
 
-**Why Facenet512 is Slower**:
+**Why ArcFace is Slower**:
 1. **Deep architecture**: 469 layers = more computation
 2. **Inception modules**: Parallel convolutions = complex
 3. **Residual connections**: Skip connections add overhead
@@ -289,21 +289,21 @@ Facenet512:   ~3-5 seconds per verification  (10-15x slower)
 
 ### Accuracy Comparison
 
-**Research Study** (IEEE 2023): "Comparison of Face Recognition Accuracy of ArcFace, Facenet and Facenet512 Models on Deepface Framework"
+**Research Study** (IEEE 2023): "Comparison of Face Recognition Accuracy of ArcFace, Facenet and ArcFace Models on Deepface Framework"
 
 **Results**:
 - VGG-Face accuracy: **~95-97%** (on standard benchmarks)
-- Facenet512 accuracy: **~97-99%** (on standard benchmarks)
-- **Difference**: **2-3% accuracy improvement** for Facenet512
+- ArcFace accuracy: **~97-99%** (on standard benchmarks)
+- **Difference**: **2-3% accuracy improvement** for ArcFace
 
 **Practical Reality**:
 - VGG-Face: **"Highly accurate results"** - user reports
-- Facenet512: **"Highly accurate results"** - user reports
+- ArcFace: **"Highly accurate results"** - user reports
 - **Perceived difference**: Minimal in production
 
 **Trade-off Analysis**:
 ```
-Facenet512 vs VGG-Face:
+ArcFace vs VGG-Face:
 + 2-3% accuracy improvement
 - 10-40x slower
 - Regular timeouts
@@ -312,7 +312,7 @@ Facenet512 vs VGG-Face:
 Verdict: ❌ NOT WORTH IT for production
 ```
 
-### Why Facenet512 Timeouts
+### Why ArcFace Timeouts
 
 **Root Causes**:
 
@@ -322,7 +322,7 @@ Verdict: ❌ NOT WORTH IT for production
    - Residual connections add memory overhead
 
 2. **CPU Bottleneck**:
-   - Facenet512 designed for GPU acceleration
+   - ArcFace designed for GPU acceleration
    - Running on CPU is **10-20x slower**
    - Your production server likely CPU-only
 
@@ -333,15 +333,15 @@ Verdict: ❌ NOT WORTH IT for production
 
 4. **Detector Overhead**:
    - RetinaFace detector: **First call 10s, subsequent 3-6s**
-   - Combined with slow Facenet512 → timeout
+   - Combined with slow ArcFace → timeout
 
 5. **Database Size**:
    - 1,279-2,591 persons require repeated inference
    - Slow model × large database = compounding delay
 
-### Optimization Strategies for Facenet512
+### Optimization Strategies for ArcFace
 
-#### Option 1: GPU Acceleration (Recommended if keeping Facenet512)
+#### Option 1: GPU Acceleration (Recommended if keeping ArcFace)
 
 **Hardware upgrade**:
 ```python
@@ -349,7 +349,7 @@ Verdict: ❌ NOT WORTH IT for production
 import tensorflow as tf
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
-    # Use GPU for Facenet512
+    # Use GPU for ArcFace
     with tf.device('/GPU:0'):
         result = DeepFace.find(...)
 ```
@@ -374,7 +374,7 @@ if gpus:
 dfs = DeepFace.find(
     img_path=image_path,
     db_path=db_path,
-    model_name="Facenet512",
+    model_name="ArcFace",
     detector_backend="opencv",  # ← MUCH FASTER
     distance_metric="cosine",
     enforce_detection=False,
@@ -395,9 +395,9 @@ dfs = DeepFace.find(
 # Stage 1: Fast screening with VGG-Face
 vgg_result = DeepFace.find(model_name="VGG-Face", ...)
 
-# Stage 2: Only if confident, verify with Facenet512
+# Stage 2: Only if confident, verify with ArcFace
 if vgg_result['confidence'] < 0.90:
-    facenet_result = DeepFace.find(model_name="Facenet512", ...)
+    facenet_result = DeepFace.find(model_name="ArcFace", ...)
     return facenet_result
 else:
     return vgg_result  # Already confident
@@ -405,12 +405,12 @@ else:
 
 **Benefits**:
 - 80-90% requests: VGG-Face only (fast)
-- 10-20% requests: Facenet512 verification (slow but rare)
-- **Average speed**: 90% faster than Facenet512-only
+- 10-20% requests: ArcFace verification (slow but rare)
+- **Average speed**: 90% faster than ArcFace-only
 
 #### Option 4: Model Quantization (Advanced)
 
-**Technique**: Reduce Facenet512 precision
+**Technique**: Reduce ArcFace precision
 
 ```python
 # Convert to TensorFlow Lite (int8 quantization)
@@ -425,19 +425,19 @@ tflite_model = converter.convert()
 **Gain**: 2-4x speedup
 **Trade-off**: -1-2% accuracy loss
 
-### Research: Is Facenet512 Worth It?
+### Research: Is ArcFace Worth It?
 
 **Academic Consensus** (2024):
 > "VGG-Face, FaceNet, ArcFace and Dlib are overperforming ones based on experiments in the DeepFace framework."
 
 **Industry Practice**:
 - Most production systems: **VGG-Face or ArcFace**
-- Facenet512: Research and benchmarking only
+- ArcFace: Research and benchmarking only
 - Reason: **Speed matters more than 2% accuracy in production**
 
 **Your Context**:
 - Current: VGG-Face achieving **95-98% accuracy** (Serbia data)
-- Potential: Facenet512 achieving **97-99% accuracy**
+- Potential: ArcFace achieving **97-99% accuracy**
 - Gain: **+1-2% absolute accuracy**
 - Cost: **10-40x slower, regular timeouts**
 
@@ -445,7 +445,7 @@ tflite_model = converter.convert()
 
 ### Production Decision Framework
 
-**Should you deploy Facenet512?**
+**Should you deploy ArcFace?**
 
 **YES, if**:
 - ✅ You have GPU infrastructure
@@ -461,50 +461,50 @@ tflite_model = converter.convert()
 
 ### Alternative Model: ArcFace (Better Option)
 
-**If you want better accuracy without Facenet512 slowness**:
+**If you want better accuracy without ArcFace slowness**:
 
 **ArcFace**:
 - Speed: **Comparable to VGG-Face** (~0.3-0.5s)
-- Accuracy: **Better than both** VGG-Face and Facenet512
+- Accuracy: **Better than both** VGG-Face and ArcFace
 - State-of-the-art: 2019 (newer than both)
 - Production-ready: ✅ Yes
 
-**Recommendation**: Test **ArcFace** instead of Facenet512
+**Recommendation**: Test **ArcFace** instead of ArcFace
 
 ```python
-# A/B Test: VGG-Face vs ArcFace (better than Facenet512)
+# A/B Test: VGG-Face vs ArcFace (better than ArcFace)
 Pipeline A: VGG-Face (current)
-Pipeline B: ArcFace (new) ← REPLACE Facenet512 with this
+Pipeline B: ArcFace (new) ← REPLACE ArcFace with this
 ```
 
 **Expected Results**:
 - ArcFace: Similar speed to VGG-Face
-- ArcFace: Better accuracy than Facenet512
+- ArcFace: Better accuracy than ArcFace
 - ArcFace: No timeouts
 
 ### Answer Summary
 
 **Your A/B Test**:
 - ✅ **Pipeline A**: VGG-Face (fast, proven)
-- ❌ **Pipeline B**: Facenet512 (slow, timeout issues)
+- ❌ **Pipeline B**: ArcFace (slow, timeout issues)
 
-**Why Facenet512 is Slow**:
+**Why ArcFace is Slow**:
 - 469 layers vs 22 layers (VGG-Face)
 - Complex Inception architecture
 - Designed for GPU, running on CPU
 - **10-40x slower** than VGG-Face
 
-**Is Facenet512 Better?**:
+**Is ArcFace Better?**:
 - Accuracy: **+2-3%** vs VGG-Face
 - Speed: **-10-40x** vs VGG-Face
 - **Verdict**: Not worth the trade-off
 
 **Recommendation**:
 1. ✅ **Keep VGG-Face** for production (fast, accurate enough)
-2. ✅ **Replace Facenet512 with ArcFace** for A/B testing (faster + more accurate)
-3. ❌ **Abandon Facenet512** unless you deploy GPUs
+2. ✅ **Replace ArcFace with ArcFace** for A/B testing (faster + more accurate)
+3. ❌ **Abandon ArcFace** unless you deploy GPUs
 
-**If you must optimize Facenet512**:
+**If you must optimize ArcFace**:
 - Option 1: Deploy GPU (10x speedup)
 - Option 2: Use OpenCV detector (5x speedup)
 - Option 3: Hybrid VGG→Facenet (90% speedup)
@@ -1077,7 +1077,7 @@ def recognize_with_qdrant(query_image, threshold=0.35):
 - ✅ **Keep pickle files** - optimal for your 1,279 + 2,591 persons
 - ✅ **Monitor database growth** - track persons per domain
 - ✅ **Migrate at 5,000+ persons** - use Faiss or Qdrant
-- ✅ **ArcFace instead of Facenet512** - better speed/accuracy balance
+- ✅ **ArcFace instead of ArcFace** - better speed/accuracy balance
 
 ---
 
@@ -1085,7 +1085,7 @@ def recognize_with_qdrant(query_image, threshold=0.35):
 
 ### Immediate Actions (This Week)
 
-1. ✅ **Stop A/B testing Facenet512**
+1. ✅ **Stop A/B testing ArcFace**
    - It's 10-40x slower than VGG-Face
    - Only 2-3% accuracy improvement
    - Regular timeouts unacceptable
@@ -1115,7 +1115,7 @@ def recognize_with_qdrant(query_image, threshold=0.35):
    - Prioritize photo collection for high-traffic persons
    - Remove persons with zero recognition in 6 months
 
-6. ✅ **If replacing Facenet512**:
+6. ✅ **If replacing ArcFace**:
    - Test **ArcFace** instead (better option)
    - Configure GPU if accuracy gains matter
    - Use hybrid approach (VGG first, slow model verification)
@@ -1144,9 +1144,9 @@ def recognize_with_qdrant(query_image, threshold=0.35):
 - ✅ **STOP at 50** - diminishing returns beyond this
 - ✅ **Tiered approach**: 40-50 (VIPs), 20-30 (regular), 10-15 (background)
 
-**Question 2: Which models? Why Facenet512 slow?**
-- ✅ VGG-Face (fast, proven) vs Facenet512 (slow, minimal gain)
-- ❌ **Abandon Facenet512** - not worth 10-40x slowdown
+**Question 2: Which models? Why ArcFace slow?**
+- ✅ VGG-Face (fast, proven) vs ArcFace (slow, minimal gain)
+- ❌ **Abandon ArcFace** - not worth 10-40x slowdown
 - ✅ **Test ArcFace instead** - better speed/accuracy balance
 - **Why slow**: 469 layers, complex architecture, CPU bottleneck
 

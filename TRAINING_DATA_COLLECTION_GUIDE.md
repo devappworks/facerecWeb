@@ -395,7 +395,7 @@ def recognize_face():
     result = DeepFace.find(
         img_path=uploaded_image,
         db_path=db_path,
-        model_name="VGG-Face",  # Or Facenet512 in A/B testing
+        model_name="VGG-Face",  # Or ArcFace in A/B testing
         detector_backend="retinaface",
         distance_metric="cosine",
         threshold=0.35  # Or 0.40 in improved system
@@ -593,7 +593,7 @@ storage/
 
 Based on the A/B testing framework we just implemented:
 
-1. **Use Facenet512** instead of VGG-Face for verification
+1. **Use ArcFace** instead of VGG-Face for verification
    - Better accuracy (97.4% vs ~92%)
    - Update `_verify_faces()` threshold to 0.40
 
@@ -607,7 +607,7 @@ Based on the A/B testing framework we just implemented:
    - Face tracking
 
 4. **Implement ensemble verification**
-   - Use multiple models (Facenet512 + ArcFace)
+   - Use multiple models (ArcFace + ArcFace)
    - Weighted voting for decisions
 
 ---

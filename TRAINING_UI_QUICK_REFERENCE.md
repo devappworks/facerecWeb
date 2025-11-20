@@ -116,7 +116,7 @@ User → Upload Image → Backend runs DeepFace
 ```
 User → Upload Image → Backend runs BOTH systems
      → Pipeline A: VGG-Face, threshold 0.35
-     → Pipeline B: Facenet512, threshold 0.40
+     → Pipeline B: ArcFace, threshold 0.40
      → Returns: comparison, recommendation
 ```
 

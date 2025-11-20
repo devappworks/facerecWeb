@@ -4,7 +4,7 @@
 
 This document describes a **separate UI** for the A/B testing system that compares two face recognition models side-by-side. This is **independent** of the training UI and focuses solely on testing and comparing recognition performance.
 
-**Purpose**: Help stakeholders decide whether to migrate from the current system (VGG-Face) to the improved system (Facenet512).
+**Purpose**: Help stakeholders decide whether to migrate from the current system (VGG-Face) to the improved system (ArcFace).
 
 ---
 
@@ -56,9 +56,9 @@ A **comparison dashboard** with 4 main sections:
     │  PIPELINE A  │              │  PIPELINE B  │
     │  (Current)   │              │  (Improved)  │
     ├──────────────┤              ├──────────────┤
-    │ VGG-Face     │              │ Facenet512   │
+    │ VGG-Face     │              │ ArcFace      │
     │ Threshold:   │              │ Threshold:   │
-    │ 0.35         │              │ 0.40         │
+    │ 0.35         │              │ 0.50         │
     │ Confidence:  │              │ Confidence:  │
     │ 99.5%        │              │ 98%          │
     └──────────────┘              └──────────────┘
@@ -257,8 +257,8 @@ interface MetricsSummary {
 │  PIPELINE A               │  PIPELINE B                     │
 │  Current System           │  Improved System                │
 ├───────────────────────────┼─────────────────────────────────┤
-│  Model: VGG-Face          │  Model: Facenet512              │
-│  Threshold: 0.35          │  Threshold: 0.40                │
+│  Model: VGG-Face          │  Model: ArcFace                 │
+│  Threshold: 0.35          │  Threshold: 0.50                │
 │  Confidence: 99.5%        │  Confidence: 98%                │
 ├───────────────────────────┼─────────────────────────────────┤
 │  Status: ✓ Success        │  Status: ✓ Success              │

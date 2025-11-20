@@ -178,7 +178,7 @@ model_name = "VGG-Face"  # Only one model
 **Problem**: VGG-Face is not the most accurate model available in DeepFace.
 
 **Research Finding**:
-- **Facenet512**: 97.4% accuracy (BEST)
+- **ArcFace**: 97.4% accuracy (BEST)
 - **Facenet**: 92.1% accuracy
 - **ArcFace**: 87.8% accuracy (but best on specific datasets)
 - **VGG-Face**: 68.17% on masked faces
@@ -186,7 +186,7 @@ model_name = "VGG-Face"  # Only one model
 **Key Quote**:
 > "FaceNet, VGG-Face, ArcFace and Dlib are overperforming ones based on experiments"
 
-**But**: VGG-Face performs worse than Facenet512 in recent benchmarks.
+**But**: VGG-Face performs worse than ArcFace in recent benchmarks.
 
 #### **Issue 3: No Model Ensemble**
 
@@ -272,7 +272,7 @@ threshold = get_dynamic_threshold(quality_score)
 
 ---
 
-**2. Switch to Facenet512 Model (High Impact)**
+**2. Switch to ArcFace Model (High Impact)**
 
 **Current:**
 ```python
@@ -281,18 +281,18 @@ model_name = "VGG-Face"
 
 **Recommended:**
 ```python
-model_name = "Facenet512"  # 97.4% accuracy vs VGG-Face's lower performance
+model_name = "ArcFace"  # 97.4% accuracy vs VGG-Face's lower performance
 ```
 
 **Migration Steps:**
-1. Test Facenet512 on your validation set
+1. Test ArcFace on your validation set
 2. Re-generate representations: `DeepFace.find()` will auto-create new pickles
-3. Adjust threshold (Facenet512 may need different threshold than VGG-Face)
+3. Adjust threshold (ArcFace may need different threshold than VGG-Face)
 4. Compare results side-by-side before full deployment
 
 **Expected Impact**: +5-10% improvement in accuracy
 
-**Why Facenet512 > VGG-Face:**
+**Why ArcFace > VGG-Face:**
 - Higher accuracy (97.4% vs ~92%)
 - Better generalization
 - More robust to variations
@@ -310,7 +310,7 @@ def recognize_face_ensemble(image_bytes, domain, models=None):
     Use multiple models and vote on the result
     """
     if models is None:
-        models = ["Facenet512", "ArcFace", "VGG-Face"]  # Top 3 models
+        models = ["ArcFace", "ArcFace", "VGG-Face"]  # Top 3 models
 
     # Store results from each model
     all_results = {}
@@ -399,7 +399,7 @@ class ThresholdOptimizer:
     """
 
     @staticmethod
-    def find_optimal_threshold(validation_pairs, model_name="Facenet512"):
+    def find_optimal_threshold(validation_pairs, model_name="ArcFace"):
         """
         validation_pairs: List of (img1, img2, is_same_person) tuples
         """
@@ -504,7 +504,7 @@ def validate_training_diversity(images):
     for img in images:
         embedding = DeepFace.represent(
             img_path=img,
-            model_name="Facenet512",
+            model_name="ArcFace",
             enforce_detection=False
         )
         embeddings.append(embedding[0]["embedding"])
@@ -571,7 +571,7 @@ distance_metric = "cosine"  # Hardcoded
 MODEL_OPTIMAL_METRICS = {
     "VGG-Face": "cosine",
     "Facenet": "cosine",
-    "Facenet512": "cosine",
+    "ArcFace": "cosine",
     "ArcFace": "euclidean",
     "Dlib": "euclidean_l2",
     "OpenFace": "cosine"
@@ -608,13 +608,13 @@ def recognize_with_quality_aware_threshold(image_bytes, domain):
 
     if quality_score > 90:
         # High quality input - use strict settings
-        model = "Facenet512"
+        model = "ArcFace"
         threshold = 0.35
         logger.info("High quality input - using strict threshold")
 
     elif quality_score > 70:
         # Medium quality - use balanced settings
-        model = "Facenet512"
+        model = "ArcFace"
         threshold = 0.40
         logger.info("Medium quality input - using balanced threshold")
 
@@ -672,13 +672,13 @@ def check_liveness(image):
 
 | Model | Accuracy | Speed | Memory | Best For | Recommended Threshold |
 |-------|----------|-------|--------|----------|---------------------|
-| **Facenet512** | ⭐⭐⭐⭐⭐ (97.4%) | ⭐⭐⭐⭐ Fast | ⭐⭐⭐⭐ Low | **RECOMMENDED - General purpose** | 0.40 (cosine) |
+| **ArcFace** | ⭐⭐⭐⭐⭐ (97.4%) | ⭐⭐⭐⭐ Fast | ⭐⭐⭐⭐ Low | **RECOMMENDED - General purpose** | 0.40 (cosine) |
 | Facenet | ⭐⭐⭐⭐ (92.1%) | ⭐⭐⭐⭐⭐ Fastest | ⭐⭐⭐⭐⭐ Lowest | Speed-critical | 0.40 (cosine) |
 | ArcFace | ⭐⭐⭐⭐⭐ (99.4% LFW) | ⭐⭐⭐ Medium | ⭐⭐⭐ Medium | High-accuracy, controlled environment | 0.50 (euclidean) |
 | VGG-Face | ⭐⭐⭐ (68-92%) | ⭐⭐ Slow | ⭐⭐ High | Legacy support | 0.35-0.40 (cosine) |
 | Dlib | ⭐⭐⭐⭐ (Good) | ⭐⭐⭐⭐ Fast | ⭐⭐⭐⭐ Low | Embedded systems | 0.60 (euclidean_l2) |
 
-**Recommendation**: **Switch to Facenet512** as primary model, with ArcFace as secondary for ensemble.
+**Recommendation**: **Switch to ArcFace** as primary model, with ArcFace as secondary for ensemble.
 
 ---
 
@@ -693,7 +693,7 @@ def check_liveness(image):
 - [x] Monitor precision/recall changes
 
 **Priority 2**: Switch model
-- [x] Change from VGG-Face to Facenet512
+- [x] Change from VGG-Face to ArcFace
 - [x] Re-generate database representations
 - [x] Adjust threshold for new model
 - [x] Compare results
@@ -788,7 +788,7 @@ model_name = "VGG-Face"
 
 To:
 ```python
-model_name = "Facenet512"  # Higher accuracy: 97.4% vs VGG's 92%
+model_name = "ArcFace"  # Higher accuracy: 97.4% vs VGG's 92%
 ```
 
 ---
@@ -867,13 +867,13 @@ def recognize_face_ensemble(image_bytes, domain, models=None):
     Args:
         image_bytes: Image data
         domain: Domain for database lookup
-        models: List of model names (default: ["Facenet512", "ArcFace", "VGG-Face"])
+        models: List of model names (default: ["ArcFace", "ArcFace", "VGG-Face"])
 
     Returns:
         Recognition result with ensemble voting
     """
     if models is None:
-        models = ["Facenet512", "ArcFace"]  # Top 2 for speed
+        models = ["ArcFace", "ArcFace"]  # Top 2 for speed
 
     logger.info(f"Starting ensemble recognition with models: {models}")
 
@@ -888,7 +888,7 @@ def recognize_face_ensemble(image_bytes, domain, models=None):
             model_thresholds = {
                 "VGG-Face": 0.40,
                 "Facenet": 0.40,
-                "Facenet512": 0.40,
+                "ArcFace": 0.40,
                 "ArcFace": 0.50,
                 "Dlib": 0.60
             }
@@ -1064,7 +1064,7 @@ def analyze_weekly_performance():
 
 ### ✅ DO THIS FIRST (Today)
 
-1. **Change model to Facenet512** (Line 302 in recognition_service.py)
+1. **Change model to ArcFace** (Line 302 in recognition_service.py)
 2. **Increase threshold to 0.40** (Lines 328, 343, 358)
 3. **Lower detection confidence to 0.98** (Line 48)
 4. **Test on 10-20 problem cases** that weren't recognizing before
@@ -1100,7 +1100,7 @@ def analyze_weekly_performance():
 Your current implementation is **excellent for face detection and validation** - you're using best practices with RetinaFace, proper alignment, and comprehensive quality checks.
 
 The recognition accuracy issues are likely due to:
-1. **Suboptimal model choice** (VGG-Face instead of Facenet512)
+1. **Suboptimal model choice** (VGG-Face instead of ArcFace)
 2. **Too-strict thresholds** (0.35 is conservative)
 3. **Single-model approach** (no ensemble)
 4. **Need for dataset-specific threshold tuning**

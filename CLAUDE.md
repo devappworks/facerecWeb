@@ -103,7 +103,7 @@ The application follows a layered architecture:
 
 **TestRecognitionService** (`app/services/test_recognition_service.py`)
 - A/B testing framework for comparing recognition profiles
-- Supports current (VGG-Face) vs improved (Facenet512) configurations
+- Supports current (VGG-Face) vs improved (ArcFace) configurations
 - Configurable detection confidence and quality thresholds
 
 **ComparisonService** (`app/services/comparison_service.py`)
@@ -218,7 +218,7 @@ The system supports multiple recognition configurations for A/B testing comparis
 - Production configuration
 
 **Improved System Profile** (`app/config/recognition_profiles.py: ImprovedSystemProfile`)
-- Model: Facenet512
+- Model: ArcFace
 - Detection confidence: >= 0.98 (98%)
 - Recognition threshold: 0.40
 - Relaxed quality thresholds for testing

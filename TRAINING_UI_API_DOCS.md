@@ -597,8 +597,8 @@ Content-Type: multipart/form-data
     "processing_time": 2.45,
     "profile_used": {
       "name": "improved",
-      "model": "Facenet512",
-      "threshold": 0.40
+      "model": "ArcFace",
+      "threshold": 0.50
     }
   },
   "comparison": {
@@ -1398,7 +1398,7 @@ function TestRecognitionPage() {
             </div>
 
             <div className="pipeline">
-              <h4>Pipeline B (Improved - Facenet512)</h4>
+              <h4>Pipeline B (Improved - ArcFace)</h4>
               <p><strong>Status:</strong> {result.pipeline_b_result.status}</p>
               <p><strong>Person:</strong> {result.pipeline_b_result.person || 'None'}</p>
               <p><strong>Confidence:</strong> {result.pipeline_b_result.confidence}%</p>
