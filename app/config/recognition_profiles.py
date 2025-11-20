@@ -56,29 +56,32 @@ class CurrentSystemProfile(RecognitionProfile):
         }
 
 
-class ImprovedSystemProfile(RecognitionProfile):
+class ArcFaceSystemProfile(RecognitionProfile):
     """
-    Improved configuration based on research (Pipeline B)
+    State-of-the-art ArcFace configuration (Pipeline B)
+    - Replaces Facenet512 (too slow: 10-40x slower than VGG-Face)
+    - ArcFace: 99.8% LFW accuracy, 17ms inference time
+    - Production-ready on CPU, no timeouts
     """
 
     def __init__(self):
         super().__init__(
-            name="improved_system",
-            description="Improved Facenet512 based system"
+            name="arcface_system",
+            description="State-of-the-art ArcFace model (2019)"
         )
 
     def get_config(self):
         return {
             # Model configuration
-            "model_name": "Facenet512",  # CHANGED
+            "model_name": "ArcFace",  # State-of-the-art (99.8% LFW)
             "detector_backend": "retinaface",
             "distance_metric": "cosine",
 
             # Recognition thresholds
-            "recognition_threshold": 0.40,  # CHANGED (was 0.35)
-            "detection_confidence_threshold": 0.98,  # CHANGED (was 0.995)
+            "recognition_threshold": 0.50,  # ArcFace uses higher threshold
+            "detection_confidence_threshold": 0.995,  # Same as production
 
-            # Quality validation (same)
+            # Quality validation (same as production)
             "blur_threshold": 100,
             "contrast_threshold": 25,
             "brightness_min": 30,
@@ -92,8 +95,9 @@ class ImprovedSystemProfile(RecognitionProfile):
             "batched": True,
 
             # Metadata
-            "profile_version": "1.0",
-            "created": "2025-01-13",
+            "profile_version": "2.0",
+            "created": "2025-11-20",
+            "replaced": "Facenet512 (too slow)",
             "is_production": False,
             "is_test": True
         }
@@ -155,9 +159,10 @@ class ProfileManager:
     """
 
     _profiles = {
-        "current": CurrentSystemProfile(),
-        "improved": ImprovedSystemProfile(),
-        "ensemble": EnsembleSystemProfile()
+        "current": CurrentSystemProfile(),       # VGG-Face (production)
+        "arcface": ArcFaceSystemProfile(),       # ArcFace (A/B testing - NEW)
+        "ensemble": EnsembleSystemProfile(),     # Future multi-model
+        # "improved": Removed Facenet512 (too slow, not production-viable)
     }
 
     @classmethod

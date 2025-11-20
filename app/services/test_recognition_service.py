@@ -124,8 +124,8 @@ class TestRecognitionService:
         result_a["processing_time"] = time_a
         logger.info(f"Pipeline A completed in {time_a:.2f}s")
 
-        # Run Pipeline B (improved system)
-        logger.info("\n----- Running Pipeline B (improved system) -----")
+        # Run Pipeline B (ArcFace system - state-of-the-art)
+        logger.info("\n----- Running Pipeline B (ArcFace system) -----")
         start_time_b = time.time()
 
         # Need to reset BytesIO pointer if it was read
@@ -133,7 +133,7 @@ class TestRecognitionService:
             image_bytes.seek(0)
 
         result_b = TestRecognitionService.recognize_face_with_profile(
-            image_bytes, domain, "improved"
+            image_bytes, domain, "arcface"
         )
         time_b = time.time() - start_time_b
         result_b["processing_time"] = time_b

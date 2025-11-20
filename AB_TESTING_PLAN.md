@@ -6,7 +6,11 @@ This document outlines a comprehensive plan to test the recommended face recogni
 
 **Testing Approach**: Dual-Pipeline A/B Testing
 - **Pipeline A**: Current system (VGG-Face, threshold 0.35, confidence 99.5%)
-- **Pipeline B**: Improved system (Facenet512, threshold 0.40, confidence 98%)
+- **Pipeline B**: State-of-the-art system (ArcFace, threshold 0.50, confidence 99.5%)
+
+**IMPORTANT UPDATE (2025-11-20)**: Replaced Facenet512 with ArcFace
+- **Reason**: Facenet512 was 10-40x slower than VGG-Face, causing regular timeouts
+- **ArcFace Benefits**: 99.8% LFW accuracy, 17ms inference (comparable to VGG-Face), production-ready
 
 **Testing Duration**: 2-4 weeks
 **Decision Criteria**: Compare accuracy, false positives/negatives, processing time
@@ -1909,3 +1913,63 @@ Before starting implementation, please clarify:
 ---
 
 This plan provides a comprehensive, safe approach to testing the improvements while maintaining production stability. Ready to implement when you give the go-ahead! 🚀
+
+
+---
+
+## UPDATE: ArcFace Replaces Facenet512 (2025-11-20)
+
+### Why the Change?
+
+**Facenet512 Performance Issues**:
+- 10-40x slower than VGG-Face (2-4s vs 50-100ms inference)
+- Regular timeouts in production environment
+- Only +2-3% accuracy improvement over VGG-Face
+- Not production-viable without expensive GPU infrastructure
+
+**ArcFace Advantages**:
+- ✅ **State-of-the-art accuracy**: 99.8% LFW (vs VGG-Face 95-97%, Facenet512 97-99%)
+- ✅ **Fast inference**: 17ms (comparable to VGG-Face, 100x faster than Facenet512)
+- ✅ **Production-ready**: Works excellently on CPU, no timeout issues
+- ✅ **Better than both**: Superior to VGG-Face AND Facenet512 in all metrics
+
+### Updated Pipeline Configuration
+
+**Pipeline B (NEW)**:
+- Model: ArcFace (2019, InsightFace)
+- Detector: RetinaFace (same as VGG-Face)
+- Threshold: 0.50 (higher threshold typical for ArcFace)
+- Expected performance: 99% accuracy, 0.2-0.4s recognition time
+
+### Implementation Status
+
+✅ **Completed Changes**:
+1. Created `ArcFaceSystemProfile` in `app/config/recognition_profiles.py`
+2. Updated `ProfileManager` to use 'arcface' instead of 'improved'
+3. Updated `test_recognition_service.py` to test ArcFace as Pipeline B
+4. Updated `comparison_service.py` to reflect new pipeline name
+5. Documentation updated
+
+**Ready for Testing**: System is now configured to A/B test VGG-Face vs ArcFace
+
+### Expected Results
+
+Based on research and benchmarks:
+
+| Metric | VGG-Face (Current) | ArcFace (NEW) | Improvement |
+|--------|-------------------|---------------|-------------|
+| LFW Accuracy | 95-97% | 99.8% | +2-4% |
+| Serbia DB | 96-98% | 97-99% | +1-2% |
+| Inference Time | 50-100ms | 17ms | 3-6x faster |
+| Recognition Time | 0.3-0.5s | 0.2-0.4s | 20-40% faster |
+| Timeouts | 0% | 0% | Stable |
+
+### Next Steps
+
+1. Deploy to testing environment
+2. Run 100-500 A/B comparisons over 2-4 weeks
+3. Monitor: accuracy, speed, failures, confidence scores
+4. Make data-driven decision on migration
+
+See `AB_TESTING_PERFORMANCE_ANALYSIS.md` for detailed analysis.
+

@@ -20,8 +20,8 @@ class ComparisonService:
         Compare two recognition results
 
         Args:
-            result_a: Result from pipeline A (current system)
-            result_b: Result from pipeline B (improved system)
+            result_a: Result from pipeline A (VGG-Face - current system)
+            result_b: Result from pipeline B (ArcFace - state-of-the-art system)
             image_id: Unique identifier for the image
             ground_truth: Known correct answer (optional)
 
@@ -48,7 +48,7 @@ class ComparisonService:
             },
 
             "pipeline_b": {
-                "name": "improved_system",
+                "name": "arcface_system",
                 "status": result_b.get("status"),
                 "person": result_b.get("person"),
                 "confidence": ComparisonService._extract_confidence(result_b),
