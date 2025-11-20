@@ -92,6 +92,7 @@ class ImageService:
                         new_width = ImageService.MAX_IMAGE_SIZE[0]
                         new_height = int(height * ratio)
                     else:
+                        image_data.seek(0)  # Reset position before returning
                         return image_data  # Vrati original ako je već manja
                 else:
                     # Vertikalna slika
@@ -100,6 +101,7 @@ class ImageService:
                         new_height = ImageService.MAX_IMAGE_SIZE[1]
                         new_width = int(width * ratio)
                     else:
+                        image_data.seek(0)  # Reset position before returning
                         return image_data  # Vrati original ako je već manja
 
                 logger.info(f"Resizing image from {img.size} to {(new_width, new_height)}")
