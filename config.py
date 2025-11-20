@@ -24,6 +24,6 @@ class Config:
     # If Wikimedia provides < WIKIMEDIA_MINIMUM_THRESHOLD: Use SERP as primary source
 
     # Database configuration (SQLite for simplicity)
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:///storage/training.db')
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:////home/facereco/facerecWeb/storage/training.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = os.getenv('SQL_DEBUG', 'False').lower() == 'true'  # Log SQL queries if SQL_DEBUG=true

@@ -56,7 +56,7 @@ class Person(db.Model):
     # Composite unique constraint: normalized_name must be unique per domain
     __table_args__ = (
         db.UniqueConstraint('domain', 'normalized_name', name='uq_domain_person'),
-        db.Index('idx_domain_status', 'domain', 'status'),
+        db.Index('idx_person_domain_status', 'domain', 'status'),
     )
 
     def to_dict(self, include_images=False):
