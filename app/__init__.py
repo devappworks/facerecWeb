@@ -1,5 +1,5 @@
 from flask import Flask
-from flask_cors import CORS
+# from flask_cors import CORS
 from config import Config
 from app.routes.image_routes import image_routes
 from app.routes.admin_routes import admin_routes
@@ -18,8 +18,8 @@ def create_app():
     # Povećanje maksimalne veličine zahteva na 30MB
     app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024  # 30MB
 
-    # Initialize CORS
-    CORS(app)
+    #     # Initialize CORS
+    #     CORS(app)
 
     # Initialize database
     from app.database import init_db
