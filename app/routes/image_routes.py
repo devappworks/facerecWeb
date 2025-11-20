@@ -67,8 +67,15 @@ def recognize_face():
         image_file = request.files['image']
         if not image_file.filename:
             return jsonify({'error': 'No selected file'}), 400
-            
-        
+
+        # Validate file type - only accept supported image formats
+        allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif'}
+        file_ext = os.path.splitext(image_file.filename)[1].lower()
+        if file_ext not in allowed_extensions:
+            return jsonify({
+                'error': f'Unsupported image format: {file_ext}. Supported formats: JPG, PNG, GIF, BMP, TIFF'
+            }), 400
+
         domain = validation_service.get_domain()
         
         # Čitaj sliku kao bytes
@@ -195,7 +202,15 @@ def upload_for_detection():
         image_file = request.files['image']
         if not image_file.filename:
             return jsonify({"error": "No selected file"}), 400
-            
+
+        # Validate file type - only accept supported image formats
+        allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif'}
+        file_ext = os.path.splitext(image_file.filename)[1].lower()
+        if file_ext not in allowed_extensions:
+            return jsonify({
+                'error': f'Unsupported image format: {file_ext}. Supported formats: JPG, PNG, GIF, BMP, TIFF'
+            }), 400
+
         # Call the controller to handle the image
 
         tracking_token = ObjectDetectionController.generate_tracking_token()

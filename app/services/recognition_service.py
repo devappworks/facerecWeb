@@ -214,18 +214,25 @@ class RecognitionService:
         try:
             logger.info("Starting face recognition process")
             start_time = time.time()
-            
+
             # Prvo dobijamo dimenzije originalne slike
             from PIL import Image
             # Proverimo tip i izvučemo bytes ako je potrebno
+            logger.info(f"image_bytes type: {type(image_bytes)}, has getvalue: {hasattr(image_bytes, 'getvalue')}")
             if hasattr(image_bytes, 'getvalue'):
                 # Ako je BytesIO objekat
                 actual_bytes = image_bytes.getvalue()
+                logger.info(f"BytesIO case: actual_bytes length = {len(actual_bytes)}")
                 image_bytes.seek(0)  # Reset pointer za slučaj da se koristi ponovo
             else:
                 # Ako su već bytes
                 actual_bytes = image_bytes
-            
+                logger.info(f"Bytes case: actual_bytes length = {len(actual_bytes) if actual_bytes else 0}")
+
+            logger.info(f"About to open image with BytesIO, actual_bytes length: {len(actual_bytes) if actual_bytes else 0}")
+            if actual_bytes:
+                logger.info(f"First 20 bytes (hex): {actual_bytes[:20].hex()}")
+                logger.info(f"First 20 bytes (repr): {repr(actual_bytes[:20])}")
             original_image = Image.open(BytesIO(actual_bytes))
             original_width, original_height = original_image.size
             logger.info(f"Original image dimensions: {original_width}x{original_height}")

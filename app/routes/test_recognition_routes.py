@@ -32,6 +32,15 @@ def test_recognize():
         if not image_file.filename:
             return jsonify({'error': 'No selected file'}), 400
 
+        # Validate file type - only accept supported image formats
+        import os
+        allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif'}
+        file_ext = os.path.splitext(image_file.filename)[1].lower()
+        if file_ext not in allowed_extensions:
+            return jsonify({
+                'error': f'Unsupported image format: {file_ext}. Supported formats: JPG, PNG, GIF, BMP, TIFF'
+            }), 400
+
         # Optional parameters
         image_id = request.form.get('image_id')
         ground_truth = request.form.get('ground_truth')  # For testing with known answers
