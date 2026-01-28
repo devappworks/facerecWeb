@@ -21,14 +21,15 @@ class AuthController:
     
     def get_token_by_email(self) -> Dict[str, Any]:
         """
-        Handle POST request to get token by email address.
+        Handle POST request to get token by email address with password authentication.
         Supports multiple domains - returns single format for one result, array for multiple.
-        
+
         Expected JSON payload:
         {
-            "email": "rts@gmail.com"
+            "email": "user@example.com",
+            "password": "SecurePassword123!"
         }
-        
+
         Returns:
             JSON response with token(s) or error message
         """
@@ -39,40 +40,59 @@ class AuthController:
                     'success': False,
                     'error': 'Content-Type must be application/json'
                 }), 400
-            
+
             # Get JSON data from request
             data = request.get_json()
-            
+
             if not data:
                 return jsonify({
                     'success': False,
                     'error': 'No data provided in request body'
                 }), 400
-            
-            # Extract email from request
+
+            # Extract email and password from request
             email = data.get('email')
-            
+            password = data.get('password')
+
             if not email:
                 return jsonify({
                     'success': False,
                     'error': 'Email field is required'
                 }), 400
-            
+
+            if not password:
+                return jsonify({
+                    'success': False,
+                    'error': 'Password field is required'
+                }), 400
+
+            # Validate password first
+            is_valid, password_error = self.email_token_service.validate_password(email, password)
+
+            if not is_valid:
+                # Log the failed attempt for security monitoring
+                logger.warning(f"Failed login attempt for email: {email} - {password_error}")
+
+                return jsonify({
+                    'success': False,
+                    'error': password_error
+                }), 401
+
             # Get all tokens using the new multi-domain service method
             tokens_data, error_message = self.email_token_service.get_tokens_by_email(email)
-            
+
             if error_message:
                 # Log the attempt for security monitoring
                 logger.warning(f"Failed token request for email: {email} - {error_message}")
-                
+
                 return jsonify({
                     'success': False,
                     'error': error_message
                 }), 404 if 'not found' in error_message.lower() else 500
-            
+
             # Log successful token retrieval
-            logger.info(f"Token(s) successfully retrieved for email: {email} - {len(tokens_data)} domain(s)")
-            
+            logger.info(f"Login successful for email: {email} - {len(tokens_data)} domain(s)")
+
             # If only one result, return single format (backwards compatible)
             if len(tokens_data) == 1:
                 return jsonify({
@@ -82,7 +102,7 @@ class AuthController:
                         'email': email.strip().lower()
                     }
                 }), 200
-            
+
             # If multiple results, return array format
             else:
                 return jsonify({
@@ -96,7 +116,7 @@ class AuthController:
                         for token_data in tokens_data
                     ]
                 }), 200
-            
+
         except Exception as e:
             logger.error(f"Unexpected error in get_token_by_email: {str(e)}")
             return jsonify({

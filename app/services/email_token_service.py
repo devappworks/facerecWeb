@@ -1,16 +1,18 @@
 from dotenv import load_dotenv
 import os
 import json
+import hashlib
+import hmac
 from typing import Dict, Optional, Tuple, List
 
 load_dotenv()
 
 
 class EmailTokenService:
-    """Service for handling email-to-token mapping operations with multi-domain support."""
-    
+    """Service for handling email-to-token mapping operations with multi-domain support and password authentication."""
+
     def __init__(self):
-        """Initialize the service with email-to-key mapping and client tokens."""
+        """Initialize the service with email-to-key mapping, client tokens, and passwords."""
         try:
             # CLIENTS_EMAILS can now map email -> list of keys for different domains
             # {"rts@gmail.com": ["rts", "rts_domain2"], "hrt@gmail.com": ["hrt"], ...}
@@ -18,20 +20,62 @@ class EmailTokenService:
             self.clients_emails: Dict[str, any] = json.loads(
                 os.getenv('CLIENTS_EMAILS', '{}')
             )
-            
-            # CLIENTS_TOKENS mapira token -> key  
+
+            # CLIENTS_TOKENS mapira token -> key
             # {"dJfY7Aq4mycEYEtaHxAiY6Ok43Me5IT2QwD": "rts", ...}
             self.clients_tokens: Dict[str, str] = json.loads(
                 os.getenv('CLIENTS_TOKENS', '{}')
             )
-            
+
+            # CLIENTS_PASSWORDS maps email -> password (plaintext for simplicity, env-based)
+            # {"demo1234@pchela.app": "SecurePass123!", "nikola1jankovic@gmail.com": "AdminPass456!"}
+            self.clients_passwords: Dict[str, str] = json.loads(
+                os.getenv('CLIENTS_PASSWORDS', '{}')
+            )
+
             # Kreiramo inverzni mapiranje: key -> token
             self.key_to_token: Dict[str, str] = {}
             for token, key in self.clients_tokens.items():
                 self.key_to_token[key] = token
-                
+
         except (json.JSONDecodeError, TypeError) as e:
             raise ValueError(f"Invalid JSON configuration in environment variables: {str(e)}")
+
+    def validate_password(self, email: str, password: str) -> Tuple[bool, Optional[str]]:
+        """
+        Validate password for given email address.
+
+        Args:
+            email (str): Email address to validate
+            password (str): Password to validate
+
+        Returns:
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
+            If valid, returns (True, None)
+            If invalid, returns (False, error_message)
+        """
+        if not email or not isinstance(email, str):
+            return False, "Email address is required"
+
+        if not password or not isinstance(password, str):
+            return False, "Password is required"
+
+        email = email.strip().lower()
+
+        # Check if email exists
+        if email not in self.clients_emails:
+            return False, "Invalid email or password"
+
+        # Check if password exists for this email
+        if email not in self.clients_passwords:
+            return False, "Invalid email or password"
+
+        # Validate password using constant-time comparison to prevent timing attacks
+        stored_password = self.clients_passwords[email]
+        if hmac.compare_digest(password, stored_password):
+            return True, None
+
+        return False, "Invalid email or password"
     
     def get_tokens_by_email(self, email: str) -> Tuple[Optional[List[Dict[str, str]]], Optional[str]]:
         """
