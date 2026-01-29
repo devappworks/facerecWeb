@@ -445,7 +445,30 @@ class SmartTrainingService:
                     if name_parts:
                         trained_people.add('_'.join(name_parts))
 
-            logger.info(f"[SmartTraining {run_id}] Found {len(trained_people)} trained people to benchmark")
+            logger.info(f"[SmartTraining {run_id}] Found {len(trained_people)} trained people in production")
+
+            # Only benchmark approved people (unapproved photos may not be correct)
+            approved_people = set()
+            approvals_file = os.path.join(self.STORAGE_BASE, 'approvals', f'{self.domain}_production.json')
+            if os.path.exists(approvals_file):
+                try:
+                    with open(approvals_file, 'r') as f:
+                        approvals = json.load(f)
+                    # Approvals keys are person names with spaces; trained_people uses underscores
+                    approved_people = {name.replace(' ', '_') for name in approvals.keys()}
+                except Exception as e:
+                    logger.error(f"[SmartTraining {run_id}] Error loading approvals: {str(e)}")
+
+            if approved_people:
+                trained_people = trained_people & approved_people
+                logger.info(f"[SmartTraining {run_id}] Filtered to {len(trained_people)} approved people for benchmark")
+            else:
+                logger.warning(f"[SmartTraining {run_id}] No approvals file or empty approvals - skipping benchmark")
+                return benchmark_result
+
+            if not trained_people:
+                logger.info(f"[SmartTraining {run_id}] No approved people to benchmark")
+                return benchmark_result
 
             # Sample a subset for benchmarking (don't do all every night)
             import random
