@@ -1351,6 +1351,47 @@ def get_folder_images(folder_name):
                     'path': f'recognized_faces_prod/{domain}/{img_file.name}'
                 })
 
+        # Cross-check with DB: which images have embeddings?
+        # Also find orphan embeddings (DB entries without files on disk)
+        embedded_filenames = set()
+        all_db_filenames = set()
+        total_db_embeddings = 0
+        try:
+            import subprocess, json as json_mod
+            worker_script = '''
+import sys, json, os, psycopg2
+db_url = os.getenv('VECTOR_DB_URL', 'postgresql://facerecadmin:1Un5J20uOLstxUxJYzvb76GCdAVOjZ5eN17Cq%%2FQ%%2FbrU%%3D@localhost:5432/facerecognition')
+req = json.loads(sys.stdin.read())
+conn = psycopg2.connect(db_url)
+cur = conn.cursor()
+cur.execute("SELECT f.image_path FROM face_embeddings f JOIN persons p ON f.person_id = p.id WHERE p.name = %%s AND p.domain = %%s", (req['name'], req['domain']))
+rows = cur.fetchall()
+conn.close()
+filenames = [os.path.basename(row[0]) for row in rows]
+print(json.dumps({"filenames": filenames, "total_embeddings": len(rows)}))
+'''
+            result = subprocess.run(
+                ['/root/facerecognition-backend/venv/bin/python', '-c', worker_script],
+                input=json_mod.dumps({'name': folder_name, 'domain': domain}),
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                db_result = json_mod.loads(result.stdout)
+                all_db_filenames = set(db_result['filenames'])
+                total_db_embeddings = db_result['total_embeddings']
+        except Exception as e:
+            logger.warning(f"Could not cross-check embeddings: {e}")
+
+        # Add embedding status to each image
+        file_names_on_disk = set(img['name'] for img in images)
+        for img in images:
+            img['has_embedding'] = img['name'] in all_db_filenames
+
+        files_with_embeddings = sum(1 for img in images if img.get('has_embedding'))
+        # Orphan embeddings: in DB but no file on disk
+        orphan_filenames = sorted(all_db_filenames - file_names_on_disk)
+        orphan_count = len(orphan_filenames)
+
         # Pagination
         total_items = len(images)
         total_pages = (total_items + limit - 1) // limit
@@ -1364,6 +1405,14 @@ def get_folder_images(folder_name):
             'data': {
                 'folder': folder_name,
                 'images': paginated_images,
+                'embedding_stats': {
+                    'total_files': total_items,
+                    'total_db_embeddings': total_db_embeddings,
+                    'files_with_embeddings': files_with_embeddings,
+                    'files_without_embeddings': total_items - files_with_embeddings,
+                    'orphan_embeddings': orphan_count,
+                    'orphan_filenames': orphan_filenames[:20],
+                },
                 'pagination': {
                     'page': page,
                     'limit': limit,
