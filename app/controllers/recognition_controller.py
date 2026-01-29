@@ -10,7 +10,7 @@ VECTOR_DB_ENABLED = os.getenv('VECTOR_DB_ENABLED', 'false').lower() == 'true'
 
 class RecognitionController:
     @staticmethod
-    def recognize_face(image_bytes, domain):
+    def recognize_face(image_bytes, domain, collect_diagnostics=False):
         """
         Main recognition controller - routes to PKL or pgvector based on config.
 
@@ -22,10 +22,10 @@ class RecognitionController:
             # Route to pgvector or PKL based on configuration
             if VECTOR_DB_ENABLED:
                 logger.info(f"[PGVECTOR] Using pgvector for recognition, domain={domain}")
-                return PgVectorRecognitionService.recognize_face(image_bytes, domain)
+                return PgVectorRecognitionService.recognize_face(image_bytes, domain, collect_diagnostics=collect_diagnostics)
             else:
                 logger.info(f"[PKL] Using PKL for recognition, domain={domain}")
-                return RecognitionService.recognize_face(image_bytes, domain)
+                return RecognitionService.recognize_face(image_bytes, domain, collect_diagnostics=collect_diagnostics)
 
         except Exception as e:
             logger.error(f"Error in RecognitionController.recognize_face: {str(e)}", exc_info=True)
@@ -34,7 +34,7 @@ class RecognitionController:
             if VECTOR_DB_ENABLED:
                 logger.warning("[PGVECTOR] Failed, falling back to PKL")
                 try:
-                    return RecognitionService.recognize_face(image_bytes, domain)
+                    return RecognitionService.recognize_face(image_bytes, domain, collect_diagnostics=collect_diagnostics)
                 except Exception as fallback_error:
                     logger.error(f"PKL fallback also failed: {fallback_error}")
                     raise

@@ -91,7 +91,7 @@ class RecognitionService:
         """
         try:
             # Nova, poboljšana validacija kvaliteta lica
-            is_quality_valid = RecognitionService.validate_face_quality(cropped_face, index, source_type)
+            is_quality_valid, _quality_metrics = RecognitionService.validate_face_quality(cropped_face, index, source_type)
 
             if not is_quality_valid:
                 return None
@@ -218,7 +218,7 @@ class RecognitionService:
         return filtered_results
 
     @staticmethod
-    def recognize_face(image_bytes, domain, source_type="image"):
+    def recognize_face(image_bytes, domain, source_type="image", collect_diagnostics=False):
         """
         Prepoznaje lice iz prosleđene slike
 
@@ -226,10 +226,33 @@ class RecognitionService:
             image_bytes: Image data as bytes
             domain: Domain for recognition database
             source_type: "image" for photos (strict threshold) or "video" for video frames (lenient threshold)
+            collect_diagnostics: If True, collect detailed diagnostic data for admin panel
         """
         try:
             logger.info("Starting face recognition process")
             start_time = time.time()
+
+            # Initialize diagnostics collector
+            diag = None
+            if collect_diagnostics:
+                diag = {
+                    "threshold_used": None,
+                    "model": "ArcFace",
+                    "detector": "retinaface",
+                    "distance_metric": "cosine",
+                    "source_type": source_type,
+                    "image_dimensions": {},
+                    "pipeline_summary": {
+                        "total_faces_detected": 0,
+                        "valid_after_confidence": 0,
+                        "valid_after_quality": 0,
+                        "valid_after_size_filter": 0,
+                        "faces_matched": 0
+                    },
+                    "rejected_faces": [],
+                    "per_face_details": [],
+                    "timing_ms": {}
+                }
 
             # Prvo dobijamo dimenzije originalne slike
             from PIL import Image
@@ -260,7 +283,13 @@ class RecognitionService:
             resized_pil = Image.open(resized_image)
             resized_width, resized_height = resized_pil.size
             logger.info(f"Resized image dimensions: {resized_width}x{resized_height}")
-            
+
+            if diag:
+                diag["image_dimensions"] = {
+                    "original": {"width": original_width, "height": original_height},
+                    "resized": {"width": resized_width, "height": resized_height}
+                }
+
             # Očisti domain za putanju
             clean_domain = RecognitionService.clean_domain_for_path(domain)
             
@@ -293,9 +322,14 @@ class RecognitionService:
                 align=True
             )
 
+            detect_end_time = time.time()
             logger.info(f"[STANDARD] DeepFace.extract_faces returned {len(faces)} faces")
             for i, face in enumerate(faces):
                 logger.info(f"[STANDARD] Face {i+1}: confidence={face.get('confidence', 1):.4f}, area={face.get('facial_area')}")
+
+            if diag:
+                diag["pipeline_summary"]["total_faces_detected"] = len(faces)
+                diag["timing_ms"]["face_detection"] = round((detect_end_time - start_time) * 1000)
 
             if len(faces) == 0:
                 print("❌ Nema nijednog lica.")
@@ -304,31 +338,114 @@ class RecognitionService:
 
                 # Lista za čuvanje informacija o validnim licima (ne čuvamo fizičke slike)
                 valid_faces = []
+                confidence_passed_count = 0
 
                 # Obradi svako lice kroz sve validacije
                 for i, face in enumerate(faces):
-                    face_info = RecognitionService.process_single_face(
-                        face, i+1, image_path, original_width, original_height, resized_width, resized_height, source_type
-                    )
-                    if face_info:
-                        valid_faces.append(face_info)
+                    face_idx = i + 1
+                    det_confidence = face.get('confidence', 1)
+
+                    # When collecting diagnostics, do validation step by step to capture details
+                    if diag:
+                        face_detail = {
+                            "face_index": face_idx,
+                            "detection_confidence": round(float(det_confidence), 4),
+                            "quality_metrics": None,
+                            "face_area_percent": None,
+                            "status": "rejected"
+                        }
+
+                        # Step 1: Confidence & eyes check
+                        if not RecognitionService.validate_face_confidence_and_eyes(face, face_idx):
+                            reason = "low_confidence" if det_confidence < 0.65 else "identical_eyes"
+                            diag["rejected_faces"].append({
+                                "face_index": face_idx,
+                                "reason": reason,
+                                "detection_confidence": round(float(det_confidence), 4)
+                            })
+                            face_detail["status"] = f"rejected_{reason}"
+                            diag["per_face_details"].append(face_detail)
+                            continue
+
+                        confidence_passed_count += 1
+
+                        # Step 2: Quality check - get metrics
+                        facial_area = face["facial_area"]
+                        img_cv = cv2.imread(image_path)
+                        x, y, w, h = facial_area["x"], facial_area["y"], facial_area["w"], facial_area["h"]
+                        cropped_face = img_cv[y:y+h, x:x+w]
+
+                        is_quality_valid, quality_metrics = RecognitionService.validate_face_quality(cropped_face, face_idx, source_type)
+                        face_detail["quality_metrics"] = quality_metrics
+
+                        if not is_quality_valid:
+                            diag["rejected_faces"].append({
+                                "face_index": face_idx,
+                                "reason": quality_metrics.get("reject_reason", "quality_check"),
+                                "detection_confidence": round(float(det_confidence), 4),
+                                "quality_metrics": quality_metrics
+                            })
+                            face_detail["status"] = "rejected_quality"
+                            diag["per_face_details"].append(face_detail)
+                            continue
+
+                        # Face passed quality - create face_info
+                        face_info = RecognitionService.check_face_quality_and_create_info(
+                            cropped_face, facial_area, face_idx, original_width, original_height, resized_width, resized_height, source_type
+                        )
+                        if face_info:
+                            valid_faces.append(face_info)
+                            # Calculate face area as percentage
+                            face_area_pct = round((w * h) / (resized_width * resized_height) * 100, 2)
+                            face_detail["face_area_percent"] = face_area_pct
+                            face_detail["status"] = "passed_quality"
+
+                        diag["per_face_details"].append(face_detail)
+                    else:
+                        # Original flow without diagnostics
+                        face_info = RecognitionService.process_single_face(
+                            face, face_idx, image_path, original_width, original_height, resized_width, resized_height, source_type
+                        )
+                        if face_info:
+                            valid_faces.append(face_info)
+
+                if diag:
+                    diag["pipeline_summary"]["valid_after_confidence"] = confidence_passed_count
+                    diag["pipeline_summary"]["valid_after_quality"] = len(valid_faces)
 
                 # Finalna provera - size filtering for multi-person recognition
                 # Changed size_threshold from 0.7 to 0.50 to 0.30 (30% of largest face)
                 # This allows smaller but still valid faces to be recognized
                 final_valid_faces = FaceValidationService.process_face_filtering(valid_faces, size_threshold=0.30)
-                
+
+                if diag:
+                    diag["pipeline_summary"]["valid_after_size_filter"] = len(final_valid_faces)
+                    # Mark size-filtered faces in per_face_details
+                    valid_indices = {f['index'] for f in final_valid_faces} if final_valid_faces else set()
+                    for fd in diag["per_face_details"]:
+                        if fd["status"] == "passed_quality" and fd["face_index"] not in valid_indices:
+                            fd["status"] = "rejected_size_filter"
+                            diag["rejected_faces"].append({
+                                "face_index": fd["face_index"],
+                                "reason": "size_filter",
+                                "detection_confidence": fd["detection_confidence"]
+                            })
+
                 # Early exit ako nema validnih lica nakon svih provera
                 if len(final_valid_faces) == 0:
                     print("🚫 Prekidam face recognition - nema validnih lica za obradu.")
                     logger.info("Stopping face recognition - no valid faces to process after all checks")
-                    return {
+                    no_faces_result = {
                         "status": "no_faces",
                         "message": "No valid faces found after validation checks",
                         "recognized_faces": [],
                         "total_faces_detected": len(faces),
                         "valid_faces_after_filtering": 0
                     }
+                    if diag:
+                        diag["timing_ms"]["total"] = round((time.time() - start_time) * 1000)
+                        no_faces_result["diagnostics"] = diag
+                    return no_faces_result
                 
             try:
                 # Use ArcFace for all domains (faster & more accurate)
@@ -345,6 +462,9 @@ class RecognitionService:
                 else:
                     recognition_threshold = 0.30  # 70% confidence minimum for static images
                     logger.info(f"Using IMAGE threshold: {recognition_threshold} (70% confidence minimum)")
+
+                if diag:
+                    diag["threshold_used"] = recognition_threshold
 
                 detector_backend = "retinaface"
                 distance_metric = "cosine"
@@ -395,13 +515,15 @@ class RecognitionService:
                     filtered_dfs = RecognitionService.filter_recognition_results_by_valid_faces_batched(
                         dfs, final_valid_faces, resized_width, resized_height
                     )
+                    recognition_start = time.time()
                     result = RecognitionService.analyze_recognition_results_batched(
                         filtered_dfs,
                         threshold=recognition_threshold,  # Use the correct threshold for the model
                         original_width=original_width,
                         original_height=original_height,
                         resized_width=resized_width,
-                        resized_height=resized_height
+                        resized_height=resized_height,
+                        diagnostics=diag
                     )
                 else:
                     # STANDARD MODE: DeepFace vraća list of DataFrames (postojeće funkcije)
@@ -410,6 +532,7 @@ class RecognitionService:
                     filtered_dfs = RecognitionService.filter_recognition_results_by_valid_faces(
                         dfs, final_valid_faces, resized_width, resized_height
                     )
+                    recognition_start = time.time()
                     result = RecognitionService.analyze_recognition_results(
                         filtered_dfs,
                         threshold=recognition_threshold,  # Use the correct threshold for the model
@@ -419,6 +542,16 @@ class RecognitionService:
                         resized_height=resized_height
                     )
                 logger.info(f"Recognition completed in {time.time() - start_time:.2f}s")
+
+                # Attach diagnostics to result
+                if diag:
+                    diag["timing_ms"]["recognition_search"] = round((time.time() - recognition_start) * 1000)
+                    diag["timing_ms"]["total"] = round((time.time() - start_time) * 1000)
+                    if result.get("status") == "success":
+                        matched_count = len(result.get("recognized_persons", []))
+                        diag["pipeline_summary"]["faces_matched"] = matched_count
+                    result["diagnostics"] = diag
+
                 return result
                 
             except Exception as e:
@@ -1155,10 +1288,13 @@ class RecognitionService:
         return filtered_results
 
     @staticmethod  
-    def analyze_recognition_results_batched(results, threshold=0.4, original_width=None, original_height=None, resized_width=None, resized_height=None):
+    def analyze_recognition_results_batched(results, threshold=0.4, original_width=None, original_height=None, resized_width=None, resized_height=None, diagnostics=None):
         """
         Analizira rezultate prepoznavanja (BATCHED MODE - List[List[Dict]])
         Vraća isti format kao analyze_recognition_results ali radi sa List[List[Dict]] umesto DataFrames.
+
+        Args:
+            diagnostics: Optional diagnostics dict to populate with per-face match data
         """
         name_scores = defaultdict(list)
         all_matches = defaultdict(list)
@@ -1305,6 +1441,71 @@ class RecognitionService:
                     img_path = match['identity'].split('/')[-1] if '/' in match['identity'] else match['identity'].split('\\')[-1]
                     logger.info(f"      {match_conf}% <- {img_path}")
         logger.info(f"{'='*50}\n")
+
+        # Collect per-face match data and near-misses for diagnostics
+        if diagnostics is not None:
+            # Build per-face top matches from the raw batched results
+            per_face_matches = {}
+            if results:
+                for face_idx, face_results in enumerate(results):
+                    if not face_results:
+                        continue
+                    face_key = face_idx + 1
+                    per_face_matches[face_key] = []
+                    # Collect top 5 unique persons per face
+                    seen_persons = {}
+                    for match_dict in sorted(face_results, key=lambda x: x.get('distance', 999)):
+                        identity_path = match_dict.get('identity', '')
+                        filename = identity_path.split('/')[-1] if '/' in identity_path else identity_path.split('\\')[-1]
+                        # Extract person name
+                        name_parts = filename.split('_')
+                        person_name = []
+                        for part in name_parts:
+                            if len(part) >= 8 and (part[0:4].isdigit() or '-' in part):
+                                break
+                            person_name.append(part)
+                        person_name = '_'.join(person_name)
+                        dist = float(match_dict.get('distance', 999))
+
+                        if person_name not in seen_persons:
+                            seen_persons[person_name] = True
+                            per_face_matches[face_key].append({
+                                "person": person_name,
+                                "distance": round(dist, 4),
+                                "confidence_pct": round((1 - dist) * 100, 2),
+                                "reference_image": filename
+                            })
+                            if len(seen_persons) >= 5:
+                                break
+
+            # Attach per-face top matches to per_face_details
+            for fd in diagnostics.get("per_face_details", []):
+                face_key = fd["face_index"]
+                if face_key in per_face_matches:
+                    fd["top_matches"] = per_face_matches[face_key]
+
+            # Collect near-misses: persons whose best distance is above threshold but within 20%
+            near_miss_threshold = threshold * 1.2
+            near_misses = []
+            for name, distances in all_matches.items():
+                best_dist = min(distances)
+                if best_dist >= threshold and best_dist <= near_miss_threshold:
+                    near_misses.append({
+                        "person": name,
+                        "min_distance": round(best_dist, 4),
+                        "confidence_pct": round((1 - best_dist) * 100, 2),
+                        "occurrences": len(distances),
+                        "distance_above_threshold": round(best_dist - threshold, 4)
+                    })
+            diagnostics["near_misses"] = sorted(near_misses, key=lambda x: x["min_distance"])
+
+            # Count reference images for matched persons
+            try:
+                db_path_for_stats = os.path.join('storage/recognized_faces_prod',
+                    RecognitionService.clean_domain_for_path(next(iter(all_matches.keys()), '')).split('_')[0]
+                    if all_matches else '')
+            except Exception:
+                db_path_for_stats = None
 
         # Process matches that passed threshold
         if not name_scores:
@@ -1482,8 +1683,17 @@ class RecognitionService:
             source_type (str): "image" for photos (strict) or "video" for video frames (lenient)
 
         Returns:
-            bool: True ako je lice validnog kvaliteta
+            tuple: (bool, dict) - (is_valid, quality_metrics)
+                quality_metrics contains blur_score, blur_threshold, contrast, brightness,
+                edge_density, and optionally reject_reason
         """
+        quality_metrics = {
+            "blur_score": 0.0,
+            "blur_threshold": 100,
+            "contrast": 0.0,
+            "brightness": 0.0,
+            "edge_density": 0.0
+        }
         try:
             # Convert to uint8 if needed
             if cropped_face.dtype == 'float64' or cropped_face.dtype == 'float32':
@@ -1501,42 +1711,51 @@ class RecognitionService:
 
             # Use 75 for video (more lenient due to motion blur), 100 for images (strict)
             blur_threshold = 75 if source_type == "video" else 100
-            if laplacian_var < blur_threshold:
-                print(f"⚠️ Lice {index} je zamagljeno (Laplacian var: {laplacian_var:.2f} < {blur_threshold}) - odbacujem.")
-                logger.info(f"Face {index} rejected - too blurry (Laplacian variance: {laplacian_var:.2f} < {blur_threshold}, source_type={source_type})")
-                return False
+            quality_metrics["blur_score"] = round(float(laplacian_var), 2)
+            quality_metrics["blur_threshold"] = blur_threshold
 
             # 2. KONTRAST VALIDACIJA
-            # Računam standardnu devijaciju piksela kao meru kontrasta
             contrast = gray.std()
-            min_contrast = 25.0  # Minimalni kontrast
-
-            if contrast < min_contrast:
-                print(f"⚠️ Lice {index} ima slab kontrast ({contrast:.2f}) - odbacujem.")
-                logger.info(f"Face {index} rejected - low contrast ({contrast:.2f})")
-                return False
+            quality_metrics["contrast"] = round(float(contrast), 2)
 
             # 3. JASNOĆA/OSVETLJENJE VALIDACIJA
             mean_brightness = gray.mean()
-
-            # Odbaci lica koja su previše tamna ili previše svetla
-            if mean_brightness < 30 or mean_brightness > 220:
-                print(f"⚠️ Lice {index} ima lošu osvetljenost ({mean_brightness:.2f}) - odbacujem.")
-                logger.info(f"Face {index} rejected - poor lighting (brightness: {mean_brightness:.2f})")
-                return False
+            quality_metrics["brightness"] = round(float(mean_brightness), 2)
 
             # 4. DODATNA DETEKCIJA OŠTRINE PREKO GRADIJENTA
-            # Sobel operator za detekciju ivica
             sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
             sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
             sobel_magnitude = np.sqrt(sobelx**2 + sobely**2)
             edge_density = np.mean(sobel_magnitude)
+            quality_metrics["edge_density"] = round(float(edge_density), 2)
 
-            min_edge_density = 15.0  # Minimalna gustina ivica
+            # Now check thresholds
+            min_contrast = 25.0
+            min_edge_density = 15.0
+
+            if laplacian_var < blur_threshold:
+                print(f"⚠️ Lice {index} je zamagljeno (Laplacian var: {laplacian_var:.2f} < {blur_threshold}) - odbacujem.")
+                logger.info(f"Face {index} rejected - too blurry (Laplacian variance: {laplacian_var:.2f} < {blur_threshold}, source_type={source_type})")
+                quality_metrics["reject_reason"] = "too_blurry"
+                return False, quality_metrics
+
+            if contrast < min_contrast:
+                print(f"⚠️ Lice {index} ima slab kontrast ({contrast:.2f}) - odbacujem.")
+                logger.info(f"Face {index} rejected - low contrast ({contrast:.2f})")
+                quality_metrics["reject_reason"] = "low_contrast"
+                return False, quality_metrics
+
+            if mean_brightness < 30 or mean_brightness > 220:
+                print(f"⚠️ Lice {index} ima lošu osvetljenost ({mean_brightness:.2f}) - odbacujem.")
+                logger.info(f"Face {index} rejected - poor lighting (brightness: {mean_brightness:.2f})")
+                quality_metrics["reject_reason"] = "poor_brightness"
+                return False, quality_metrics
+
             if edge_density < min_edge_density:
                 print(f"⚠️ Lice {index} ima malu gustinu ivica ({edge_density:.2f}) - odbacujem.")
                 logger.info(f"Face {index} rejected - low edge density ({edge_density:.2f})")
-                return False
+                quality_metrics["reject_reason"] = "low_edge_density"
+                return False, quality_metrics
 
             print(f"✅ Lice {index} prošlo sve kvalitativne provere ({source_type} mode):")
             print(f"   📏 Laplacian var: {laplacian_var:.2f} (>{blur_threshold})")
@@ -1545,12 +1764,13 @@ class RecognitionService:
             print(f"   🔍 Gustina ivica: {edge_density:.2f} (>15)")
 
             logger.info(f"Face {index} passed quality checks ({source_type}) - Laplacian: {laplacian_var:.2f}, Contrast: {contrast:.2f}, Brightness: {mean_brightness:.2f}, Edge density: {edge_density:.2f}")
-            return True
+            return True, quality_metrics
 
         except Exception as e:
             logger.error(f"Error in face quality validation for face {index}: {str(e)}")
             print(f"❌ Greška u validaciji kvaliteta lica {index}: {str(e)}")
-            return False
+            quality_metrics["reject_reason"] = f"error: {str(e)}"
+            return False, quality_metrics
 
     @staticmethod
     def recognize_face_with_config(image_bytes, domain: str, config: dict):
@@ -1679,7 +1899,7 @@ class RecognitionService:
                             h = facial_area["h"]
                             cropped_face = img_cv[y:y+h, x:x+w]
 
-                            is_quality_valid = RecognitionService.validate_face_quality(cropped_face, i+1)
+                            is_quality_valid, _quality_metrics = RecognitionService.validate_face_quality(cropped_face, i+1)
                             logger.info(f"[A/B TEST] Face {i+1}: quality validation result = {is_quality_valid}")
 
                             if is_quality_valid:

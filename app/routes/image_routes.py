@@ -77,13 +77,18 @@ def recognize_face():
             }), 400
 
         domain = validation_service.get_domain()
-        
+
         # Čitaj sliku kao bytes
         image_bytes = image_file.read()
-        
+
+        # Check for diagnostics request (admin-only)
+        user_email = request.headers.get('X-User-Email', '')
+        want_diagnostics = request.args.get('diagnostics', 'false').lower() == 'true'
+        collect_diagnostics = want_diagnostics and is_admin_user(user_email)
+
         # Pozovi kontroler
-        result = RecognitionController.recognize_face(image_bytes, domain)
-        
+        result = RecognitionController.recognize_face(image_bytes, domain, collect_diagnostics=collect_diagnostics)
+
         return jsonify(result)
         
     except Exception as e:
