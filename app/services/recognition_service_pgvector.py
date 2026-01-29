@@ -374,11 +374,13 @@ class PgVectorRecognitionService:
                     import json
 
                     # Prepare request
+                    # When diagnostics enabled, use wide threshold to see ALL nearby candidates
+                    search_threshold = 1.0 if collect_diagnostics else 0.50
                     search_request = {
                         'embedding': embedding.tolist(),
                         'domain': domain,
-                        'threshold': 0.50,  # Match training threshold (was 0.30, too strict)
-                        'top_k': 10
+                        'threshold': search_threshold,
+                        'top_k': 10 if not collect_diagnostics else 20
                     }
 
                     # Call worker in separate process
@@ -436,32 +438,47 @@ class PgVectorRecognitionService:
                             "top_matches": []
                         }
 
-                    if matches and len(matches) > 0:
+                    # Split results: actual matches (below threshold) vs all candidates
+                    actual_threshold = 0.50
+                    actual_matches = [m for m in matches if m['distance'] < actual_threshold]
+
+                    # Collect diagnostics from ALL candidates (matches + non-matches)
+                    if face_diag and matches:
+                        # Deduplicate by person name, keeping best (lowest) distance
+                        seen_persons = {}
+                        for m in matches:
+                            name = m['name']
+                            if name not in seen_persons or m['distance'] < seen_persons[name]['distance']:
+                                seen_persons[name] = m
+                        unique_by_person = sorted(seen_persons.values(), key=lambda x: x['distance'])
+
+                        for m in unique_by_person[:10]:
+                            entry = {
+                                "person": m['name'],
+                                "distance": round(m['distance'], 4),
+                                "confidence_pct": round(m['confidence'] * 100, 1),
+                                "reference_image": m.get('image_path', ''),
+                                "matched": m['distance'] < actual_threshold
+                            }
+                            face_diag["top_matches"].append(entry)
+
+                        # Near-misses: persons close to but above threshold
+                        near_miss_ceiling = actual_threshold * 1.4  # 40% above threshold
+                        for m in unique_by_person:
+                            if m['distance'] >= actual_threshold and m['distance'] <= near_miss_ceiling:
+                                diag["near_misses"].append({
+                                    "person": m['name'],
+                                    "min_distance": round(m['distance'], 4),
+                                    "confidence_pct": round(m['confidence'] * 100, 1),
+                                    "distance_above_threshold": round(m['distance'] - actual_threshold, 4)
+                                })
+
+                    if actual_matches:
                         # Get top match
-                        top_match = matches[0]
+                        top_match = actual_matches[0]
                         person_name = top_match['name']
                         distance = top_match['distance']
                         confidence_pct = top_match['confidence'] * 100
-
-                        # Collect per-face top matches for diagnostics
-                        if face_diag:
-                            for m in matches[:5]:
-                                face_diag["top_matches"].append({
-                                    "person": m['name'],
-                                    "distance": round(m['distance'], 4),
-                                    "confidence_pct": round(m['confidence'] * 100, 1),
-                                    "reference_image": m.get('image', '')
-                                })
-                            # Collect near-misses: matches above threshold but close
-                            near_miss_threshold = 0.50 * 1.2  # 20% above threshold
-                            for m in matches:
-                                if m['distance'] >= 0.50 and m['distance'] <= near_miss_threshold:
-                                    diag["near_misses"].append({
-                                        "person": m['name'],
-                                        "min_distance": round(m['distance'], 4),
-                                        "confidence_pct": round(m['confidence'] * 100, 1),
-                                        "distance_above_threshold": round(m['distance'] - 0.50, 4)
-                                    })
 
                         # Add to recognized persons (PKL format)
                         recognized_persons.append({
