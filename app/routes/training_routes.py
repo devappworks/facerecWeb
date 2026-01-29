@@ -1177,9 +1177,11 @@ def get_training_progress():
 
     Query params:
     - domain: serbia|slovenia (required)
-    - view: production|staging (ignored - always uses database)
+    - view: production|staging (used for hide_approved filtering)
     - page: page number (default: 1)
     - limit: items per page (default: 50)
+    - search: optional search query
+    - hide_approved: true|false - filter out approved persons (default: false)
     """
     from pathlib import Path
     import subprocess
@@ -1188,9 +1190,11 @@ def get_training_progress():
 
     try:
         domain = request.args.get('domain', 'serbia')
+        view = request.args.get('view', 'production')
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 50))
         search = request.args.get('search', None)  # Optional search query
+        hide_approved = request.args.get('hide_approved', 'false').lower() == 'true'
 
         # Get persons from database via subprocess (avoid TensorFlow/psycopg2 conflict)
         worker_path = os.path.join(
@@ -1228,6 +1232,15 @@ def get_training_progress():
             return jsonify({'success': False, 'error': worker_response.get('error')}), 500
 
         all_persons = worker_response['persons']
+
+        # Filter out approved persons if requested
+        if hide_approved:
+            approvals_file = Path('/root/facerecognition-backend/storage/approvals') / f'{domain}_{view}.json'
+            approvals = {}
+            if approvals_file.exists():
+                with open(approvals_file, 'r') as f:
+                    approvals = json.load(f)
+            all_persons = [p for p in all_persons if p['name'] not in approvals]
 
         # Use embedding count as image count (they're 1:1 in the database)
         # This avoids iterating through 30k+ files for each person
