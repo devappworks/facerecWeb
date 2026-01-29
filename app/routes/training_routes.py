@@ -1258,6 +1258,11 @@ def get_training_progress():
             # Use filesystem count as image_count for consistency with gallery view
             image_count = fs_count
 
+            # Skip persons with no embeddings and no filesystem images
+            # These are orphaned entries from deleted/rejected training data
+            if embedding_count == 0 and image_count == 0:
+                continue
+
             folders.append({
                 'name': person_name,
                 'display_name': person_name.replace('_', ' '),
