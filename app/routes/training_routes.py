@@ -1416,7 +1416,10 @@ def serve_training_image(view, domain, image_path):
         }
         mimetype = mimetype_map.get(ext, 'image/jpeg')
 
-        return send_file(full_path, mimetype=mimetype)
+        response = send_file(full_path, mimetype=mimetype)
+        # Cache images for 1 hour in browser, 1 day in CDN/proxy
+        response.headers['Cache-Control'] = 'public, max-age=3600, s-maxage=86400'
+        return response
 
     except Exception as e:
         logger.error(f"Error serving training image: {str(e)}")
