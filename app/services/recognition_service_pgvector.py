@@ -11,10 +11,11 @@ import os
 import time
 import logging
 import numpy as np
+import cv2
 from PIL import Image
 from io import BytesIO
 from deepface import DeepFace
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 
 from app.services.vector_db_service import get_vector_db
 
@@ -28,6 +29,109 @@ class PgVectorRecognitionService:
     This service provides the same interface as RecognitionService
     but uses database vector search instead of PKL files.
     """
+
+    @staticmethod
+    def validate_face_quality(face_pixels, face_idx, source_type="image"):
+        """
+        Validate face quality using blur, contrast, brightness and edge density.
+
+        Args:
+            face_pixels: Cropped face image as numpy array (BGR uint8)
+            face_idx: Face index for logging
+            source_type: "image" (strict) or "video" (lenient blur threshold)
+
+        Returns:
+            (is_valid, quality_metrics) tuple
+        """
+        quality_metrics = {
+            "blur_score": 0.0,
+            "blur_threshold": 100,
+            "contrast": 0.0,
+            "brightness": 0.0,
+            "edge_density": 0.0
+        }
+        try:
+            if face_pixels.dtype in ('float64', 'float32'):
+                face_uint8 = (face_pixels * 255).astype(np.uint8)
+            else:
+                face_uint8 = face_pixels.astype(np.uint8)
+
+            gray = cv2.cvtColor(face_uint8, cv2.COLOR_BGR2GRAY)
+
+            # Blur detection (Laplacian variance)
+            laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+            blur_threshold = 75 if source_type == "video" else 100
+            quality_metrics["blur_score"] = round(float(laplacian_var), 2)
+            quality_metrics["blur_threshold"] = blur_threshold
+
+            # Contrast (standard deviation of grayscale)
+            contrast = float(gray.std())
+            quality_metrics["contrast"] = round(contrast, 2)
+
+            # Brightness (mean of grayscale)
+            mean_brightness = float(gray.mean())
+            quality_metrics["brightness"] = round(mean_brightness, 2)
+
+            # Edge density (Sobel gradient magnitude)
+            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+            edge_density = float(np.mean(np.sqrt(sobelx**2 + sobely**2)))
+            quality_metrics["edge_density"] = round(edge_density, 2)
+
+            # Check thresholds
+            if laplacian_var < blur_threshold:
+                logger.info(f"[pgvector] Face {face_idx} rejected - too blurry (Laplacian: {laplacian_var:.2f} < {blur_threshold})")
+                quality_metrics["reject_reason"] = "too_blurry"
+                return False, quality_metrics
+
+            if contrast < 25.0:
+                logger.info(f"[pgvector] Face {face_idx} rejected - low contrast ({contrast:.2f})")
+                quality_metrics["reject_reason"] = "low_contrast"
+                return False, quality_metrics
+
+            if mean_brightness < 30 or mean_brightness > 220:
+                logger.info(f"[pgvector] Face {face_idx} rejected - poor brightness ({mean_brightness:.2f})")
+                quality_metrics["reject_reason"] = "poor_brightness"
+                return False, quality_metrics
+
+            if edge_density < 15.0:
+                logger.info(f"[pgvector] Face {face_idx} rejected - low edge density ({edge_density:.2f})")
+                quality_metrics["reject_reason"] = "low_edge_density"
+                return False, quality_metrics
+
+            logger.info(f"[pgvector] Face {face_idx} passed quality checks - blur:{laplacian_var:.0f} contrast:{contrast:.1f} bright:{mean_brightness:.0f} edge:{edge_density:.1f}")
+            return True, quality_metrics
+
+        except Exception as e:
+            logger.error(f"[pgvector] Quality validation error for face {face_idx}: {e}")
+            quality_metrics["reject_reason"] = f"error: {str(e)}"
+            return False, quality_metrics
+
+    @staticmethod
+    def filter_faces_by_size(face_areas, size_threshold=0.30):
+        """
+        Filter out faces that are too small relative to the largest face.
+
+        Args:
+            face_areas: List of dicts with 'index', 'w', 'h', 'area'
+            size_threshold: Minimum ratio to largest face area (0.30 = 30%)
+
+        Returns:
+            Set of face indices to keep
+        """
+        if len(face_areas) <= 1:
+            return {fa['index'] for fa in face_areas}
+
+        largest_area = max(fa['area'] for fa in face_areas)
+        min_required = largest_area * size_threshold
+        keep = set()
+        for fa in face_areas:
+            if fa['area'] >= min_required:
+                keep.add(fa['index'])
+                logger.info(f"[pgvector] Face {fa['index']} size OK ({fa['area']}px, {fa['area']/largest_area*100:.0f}% of largest)")
+            else:
+                logger.info(f"[pgvector] Face {fa['index']} too small ({fa['area']}px, {fa['area']/largest_area*100:.0f}% of largest, need {size_threshold*100:.0f}%)")
+        return keep
 
     @staticmethod
     def recognize_face(image_bytes, domain, source_type="image", collect_diagnostics=False):
@@ -139,7 +243,10 @@ class PgVectorRecognitionService:
                     no_faces_result["diagnostics"] = diag
                 return no_faces_result
 
-            # Step 3: Search database for each detected face
+            # Step 3: Quality validation and size filtering before DB search
+            # Load image for cropping face regions for quality checks
+            img_cv2 = cv2.imread(image_path)
+
             recognized_persons = []
             all_detected_matches = []
             best_match = None
@@ -147,41 +254,119 @@ class PgVectorRecognitionService:
             recognition_start = time.time()
             faces_skipped_confidence = 0
             faces_skipped_embedding = 0
+            faces_skipped_quality = 0
+            faces_skipped_size = 0
 
+            # First pass: validate confidence, embedding, and quality; collect face areas
+            valid_faces = []
             for face_idx, face_data in enumerate(embedding_results):
+                embedding = np.array(face_data.get("embedding", []), dtype=np.float32)
+
+                if len(embedding) != 512:
+                    logger.error(f"[pgvector] Invalid embedding size for face {face_idx}: {len(embedding)}")
+                    faces_skipped_embedding += 1
+                    if diag:
+                        diag["rejected_faces"].append({
+                            "face_index": face_idx + 1,
+                            "reason": "invalid_embedding_size",
+                            "detection_confidence": face_data.get('face_confidence', None),
+                            "quality_metrics": {"embedding_size": len(embedding)}
+                        })
+                    continue
+
+                facial_area = face_data.get('facial_area', {})
+                confidence = face_data.get('face_confidence', 1.0)
+
+                if confidence < 0.65:
+                    logger.info(f"[pgvector] Face {face_idx} low confidence ({confidence:.3f}) - skipping")
+                    faces_skipped_confidence += 1
+                    if diag:
+                        diag["rejected_faces"].append({
+                            "face_index": face_idx + 1,
+                            "reason": "low_detection_confidence",
+                            "detection_confidence": round(confidence, 4),
+                            "quality_metrics": {"confidence_gate": 0.65}
+                        })
+                    continue
+
+                # Quality validation: crop face region and check blur/contrast/brightness
+                quality_metrics = {}
+                if img_cv2 is not None:
+                    x = facial_area.get('x', 0)
+                    y = facial_area.get('y', 0)
+                    w = facial_area.get('w', 0)
+                    h = facial_area.get('h', 0)
+                    if w > 0 and h > 0:
+                        # Ensure bounds are within image
+                        ih, iw = img_cv2.shape[:2]
+                        x1 = max(0, x)
+                        y1 = max(0, y)
+                        x2 = min(iw, x + w)
+                        y2 = min(ih, y + h)
+                        cropped = img_cv2[y1:y2, x1:x2]
+
+                        if cropped.size > 0:
+                            is_valid, quality_metrics = PgVectorRecognitionService.validate_face_quality(
+                                cropped, face_idx, source_type
+                            )
+                            if not is_valid:
+                                faces_skipped_quality += 1
+                                if diag:
+                                    diag["rejected_faces"].append({
+                                        "face_index": face_idx + 1,
+                                        "reason": quality_metrics.get("reject_reason", "quality_check_failed"),
+                                        "detection_confidence": round(confidence, 4),
+                                        "quality_metrics": quality_metrics
+                                    })
+                                continue
+
+                face_w = facial_area.get('w', 0)
+                face_h = facial_area.get('h', 0)
+                valid_faces.append({
+                    'index': face_idx,
+                    'face_data': face_data,
+                    'embedding': embedding,
+                    'facial_area': facial_area,
+                    'confidence': confidence,
+                    'quality_metrics': quality_metrics,
+                    'w': face_w,
+                    'h': face_h,
+                    'area': face_w * face_h
+                })
+
+            # Size filtering: remove faces too small relative to the largest
+            valid_after_quality = len(valid_faces)
+            if len(valid_faces) > 1:
+                keep_indices = PgVectorRecognitionService.filter_faces_by_size(valid_faces, size_threshold=0.30)
+                before_count = len(valid_faces)
+                filtered_out = [vf for vf in valid_faces if vf['index'] not in keep_indices]
+                valid_faces = [vf for vf in valid_faces if vf['index'] in keep_indices]
+                faces_skipped_size = before_count - len(valid_faces)
+
+                if diag:
+                    for vf in filtered_out:
+                        diag["rejected_faces"].append({
+                            "face_index": vf['index'] + 1,
+                            "reason": "too_small",
+                            "detection_confidence": round(vf['confidence'], 4),
+                            "quality_metrics": {
+                                "face_width": vf['w'],
+                                "face_height": vf['h'],
+                                "face_area": vf['area']
+                            }
+                        })
+
+            logger.info(f"[pgvector] After filtering: {len(valid_faces)} faces (skipped: {faces_skipped_confidence} confidence, {faces_skipped_quality} quality, {faces_skipped_size} size)")
+
+            # Second pass: search database for each valid face
+            for vf in valid_faces:
+                face_idx = vf['index']
+                face_data = vf['face_data']
+                embedding = vf['embedding']
+                facial_area = vf['facial_area']
+                confidence = vf['confidence']
+
                 try:
-                    # Get embedding
-                    embedding = np.array(face_data["embedding"], dtype=np.float32)
-
-                    if len(embedding) != 512:
-                        logger.error(f"[pgvector] Invalid embedding size for face {face_idx}: {len(embedding)}")
-                        faces_skipped_embedding += 1
-                        if diag:
-                            diag["rejected_faces"].append({
-                                "face_index": face_idx + 1,
-                                "reason": "invalid_embedding_size",
-                                "detection_confidence": face_data.get('face_confidence', None),
-                                "quality_metrics": {"embedding_size": len(embedding)}
-                            })
-                        continue
-
-                    # Get facial area (bounding box)
-                    facial_area = face_data.get('facial_area', {})
-
-                    # Check confidence if available
-                    confidence = face_data.get('face_confidence', 1.0)
-                    if confidence < 0.65:
-                        logger.info(f"[pgvector] Face {face_idx} low confidence ({confidence:.3f}) - skipping")
-                        faces_skipped_confidence += 1
-                        if diag:
-                            diag["rejected_faces"].append({
-                                "face_index": face_idx + 1,
-                                "reason": "low_detection_confidence",
-                                "detection_confidence": round(confidence, 4),
-                                "quality_metrics": {"confidence_gate": 0.65}
-                            })
-                        continue
-
                     # Search database via SEPARATE PROCESS (avoid TensorFlow/psycopg2 conflicts)
                     logger.info(f"[pgvector] Searching database for face {face_idx}, domain={domain}")
 
@@ -238,7 +423,7 @@ class PgVectorRecognitionService:
                             "face_index": face_idx + 1,
                             "detection_confidence": round(confidence, 4),
                             "facial_area": facial_area,
-                            "quality_metrics": {},
+                            "quality_metrics": vf.get('quality_metrics', {}),
                             "status": "passed",
                             "top_matches": []
                         }
@@ -335,8 +520,8 @@ class PgVectorRecognitionService:
                 diag["pipeline_summary"] = {
                     "total_faces_detected": len(embedding_results),
                     "valid_after_confidence": len(embedding_results) - faces_skipped_confidence - faces_skipped_embedding,
-                    "valid_after_quality": len(embedding_results) - faces_skipped_confidence - faces_skipped_embedding,
-                    "valid_after_size_filter": len(embedding_results) - faces_skipped_confidence - faces_skipped_embedding,
+                    "valid_after_quality": valid_after_quality,
+                    "valid_after_size_filter": len(valid_faces),
                     "faces_matched": len(recognized_persons)
                 }
                 diag["timing_ms"]["recognition_search"] = round((time.time() - recognition_start) * 1000)
