@@ -59,8 +59,12 @@ class PgVectorRecognitionService:
             gray = cv2.cvtColor(face_uint8, cv2.COLOR_BGR2GRAY)
 
             # Blur detection (Laplacian variance)
+            # Note: Laplacian variance scales inversely with face crop size.
+            # Large high-res face crops (e.g. 600x870) of smooth skin can score
+            # as low as 40 despite being perfectly sharp. Threshold must be low
+            # enough to handle this. Genuinely blurry images score < 10.
             laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-            blur_threshold = 75 if source_type == "video" else 100
+            blur_threshold = 15 if source_type == "video" else 25
             quality_metrics["blur_score"] = round(float(laplacian_var), 2)
             quality_metrics["blur_threshold"] = blur_threshold
 
@@ -94,7 +98,7 @@ class PgVectorRecognitionService:
                 quality_metrics["reject_reason"] = "poor_brightness"
                 return False, quality_metrics
 
-            if edge_density < 15.0:
+            if edge_density < 8.0:
                 logger.info(f"[pgvector] Face {face_idx} rejected - low edge density ({edge_density:.2f})")
                 quality_metrics["reject_reason"] = "low_edge_density"
                 return False, quality_metrics
