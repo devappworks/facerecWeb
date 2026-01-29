@@ -168,7 +168,7 @@ class PgVectorRecognitionService:
                 "detector": "retinaface",
                 "source_type": source_type,
                 "mode": "pgvector",
-                "threshold_used": 0.50,
+                "threshold_used": 0.45,
                 "confidence_gate": 0.65,
                 "image_dimensions": {},
                 "pipeline_summary": {},
@@ -375,7 +375,7 @@ class PgVectorRecognitionService:
 
                     # Prepare request
                     # When diagnostics enabled, use wide threshold to see ALL nearby candidates
-                    search_threshold = 1.0 if collect_diagnostics else 0.50
+                    search_threshold = 1.0 if collect_diagnostics else 0.45
                     search_request = {
                         'embedding': embedding.tolist(),
                         'domain': domain,
@@ -439,7 +439,7 @@ class PgVectorRecognitionService:
                         }
 
                     # Split results: actual matches (below threshold) vs all candidates
-                    actual_threshold = 0.50
+                    actual_threshold = 0.45
                     actual_matches = [m for m in matches if m['distance'] < actual_threshold]
 
                     # Collect diagnostics from ALL candidates (matches + non-matches)
