@@ -419,10 +419,18 @@ class PgVectorRecognitionService:
                     # Build diagnostics for this face
                     face_diag = None
                     if diag:
+                        # Calculate face area as percentage of image
+                        face_area_pct = None
+                        orig_dims = diag.get("image_dimensions", {}).get("original", {})
+                        if orig_dims.get("width") and orig_dims.get("height"):
+                            img_area = orig_dims["width"] * orig_dims["height"]
+                            face_area_pct = round((vf['area'] / img_area) * 100, 1) if img_area > 0 else None
+
                         face_diag = {
                             "face_index": face_idx + 1,
                             "detection_confidence": round(confidence, 4),
                             "facial_area": facial_area,
+                            "face_area_percent": face_area_pct,
                             "quality_metrics": vf.get('quality_metrics', {}),
                             "status": "passed",
                             "top_matches": []
